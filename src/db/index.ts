@@ -10,6 +10,9 @@ mkdirSync(dirname(paths.dbFile), { recursive: true })
 
 const sqlite = new Database(paths.dbFile)
 sqlite.pragma('journal_mode = WAL')
+// Enforce onDelete:'cascade' — deleting an agent removes its tools/channels/
+// heartbeats so the scheduler/pollers never operate on orphans.
+sqlite.pragma('foreign_keys = ON')
 
 export const db = drizzle(sqlite, { schema })
 export { schema }

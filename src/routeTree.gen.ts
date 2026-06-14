@@ -9,14 +9,41 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as ToolsRouteImport } from './routes/tools'
+import { Route as CaptainRouteImport } from './routes/captain'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiToolsRouteImport } from './routes/api/tools'
 import { Route as AgentsIdRouteImport } from './routes/agents.$id'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api/trpc.$'
+import { Route as ApiToolsIdRouteImport } from './routes/api/tools.$id'
+import { Route as ApiAgentsListRouteImport } from './routes/api/agents.list'
+import { Route as ApiAgentsCreateRouteImport } from './routes/api/agents.create'
+import { Route as ApiAgentsIdToolsRouteImport } from './routes/api/agents.$id.tools'
+import { Route as ApiAgentsIdMessagesRouteImport } from './routes/api/agents.$id.messages'
+import { Route as ApiAgentsIdInfoRouteImport } from './routes/api/agents.$id.info'
+import { Route as ApiAgentsIdHeartbeatsRouteImport } from './routes/api/agents.$id.heartbeats'
 import { Route as ApiAgentsIdChatRouteImport } from './routes/api/agents.$id.chat'
+import { Route as ApiAgentsIdToolsToolIdRouteImport } from './routes/api/agents.$id.tools.$toolId'
+import { Route as ApiAgentsIdHeartbeatsHbIdRouteImport } from './routes/api/agents.$id.heartbeats.$hbId'
 
+const ToolsRoute = ToolsRouteImport.update({
+  id: '/tools',
+  path: '/tools',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CaptainRoute = CaptainRouteImport.update({
+  id: '/captain',
+  path: '/captain',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiToolsRoute = ApiToolsRouteImport.update({
+  id: '/api/tools',
+  path: '/api/tools',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AgentsIdRoute = AgentsIdRouteImport.update({
@@ -29,53 +56,214 @@ const ApiTrpcSplatRoute = ApiTrpcSplatRouteImport.update({
   path: '/api/trpc/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiToolsIdRoute = ApiToolsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ApiToolsRoute,
+} as any)
+const ApiAgentsListRoute = ApiAgentsListRouteImport.update({
+  id: '/api/agents/list',
+  path: '/api/agents/list',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAgentsCreateRoute = ApiAgentsCreateRouteImport.update({
+  id: '/api/agents/create',
+  path: '/api/agents/create',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAgentsIdToolsRoute = ApiAgentsIdToolsRouteImport.update({
+  id: '/api/agents/$id/tools',
+  path: '/api/agents/$id/tools',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAgentsIdMessagesRoute = ApiAgentsIdMessagesRouteImport.update({
+  id: '/api/agents/$id/messages',
+  path: '/api/agents/$id/messages',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAgentsIdInfoRoute = ApiAgentsIdInfoRouteImport.update({
+  id: '/api/agents/$id/info',
+  path: '/api/agents/$id/info',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAgentsIdHeartbeatsRoute = ApiAgentsIdHeartbeatsRouteImport.update({
+  id: '/api/agents/$id/heartbeats',
+  path: '/api/agents/$id/heartbeats',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAgentsIdChatRoute = ApiAgentsIdChatRouteImport.update({
   id: '/api/agents/$id/chat',
   path: '/api/agents/$id/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAgentsIdToolsToolIdRoute = ApiAgentsIdToolsToolIdRouteImport.update({
+  id: '/$toolId',
+  path: '/$toolId',
+  getParentRoute: () => ApiAgentsIdToolsRoute,
+} as any)
+const ApiAgentsIdHeartbeatsHbIdRoute =
+  ApiAgentsIdHeartbeatsHbIdRouteImport.update({
+    id: '/$hbId',
+    path: '/$hbId',
+    getParentRoute: () => ApiAgentsIdHeartbeatsRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/captain': typeof CaptainRoute
+  '/tools': typeof ToolsRoute
   '/agents/$id': typeof AgentsIdRoute
+  '/api/tools': typeof ApiToolsRouteWithChildren
+  '/api/agents/create': typeof ApiAgentsCreateRoute
+  '/api/agents/list': typeof ApiAgentsListRoute
+  '/api/tools/$id': typeof ApiToolsIdRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/api/agents/$id/chat': typeof ApiAgentsIdChatRoute
+  '/api/agents/$id/heartbeats': typeof ApiAgentsIdHeartbeatsRouteWithChildren
+  '/api/agents/$id/info': typeof ApiAgentsIdInfoRoute
+  '/api/agents/$id/messages': typeof ApiAgentsIdMessagesRoute
+  '/api/agents/$id/tools': typeof ApiAgentsIdToolsRouteWithChildren
+  '/api/agents/$id/heartbeats/$hbId': typeof ApiAgentsIdHeartbeatsHbIdRoute
+  '/api/agents/$id/tools/$toolId': typeof ApiAgentsIdToolsToolIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/captain': typeof CaptainRoute
+  '/tools': typeof ToolsRoute
   '/agents/$id': typeof AgentsIdRoute
+  '/api/tools': typeof ApiToolsRouteWithChildren
+  '/api/agents/create': typeof ApiAgentsCreateRoute
+  '/api/agents/list': typeof ApiAgentsListRoute
+  '/api/tools/$id': typeof ApiToolsIdRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/api/agents/$id/chat': typeof ApiAgentsIdChatRoute
+  '/api/agents/$id/heartbeats': typeof ApiAgentsIdHeartbeatsRouteWithChildren
+  '/api/agents/$id/info': typeof ApiAgentsIdInfoRoute
+  '/api/agents/$id/messages': typeof ApiAgentsIdMessagesRoute
+  '/api/agents/$id/tools': typeof ApiAgentsIdToolsRouteWithChildren
+  '/api/agents/$id/heartbeats/$hbId': typeof ApiAgentsIdHeartbeatsHbIdRoute
+  '/api/agents/$id/tools/$toolId': typeof ApiAgentsIdToolsToolIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/captain': typeof CaptainRoute
+  '/tools': typeof ToolsRoute
   '/agents/$id': typeof AgentsIdRoute
+  '/api/tools': typeof ApiToolsRouteWithChildren
+  '/api/agents/create': typeof ApiAgentsCreateRoute
+  '/api/agents/list': typeof ApiAgentsListRoute
+  '/api/tools/$id': typeof ApiToolsIdRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/api/agents/$id/chat': typeof ApiAgentsIdChatRoute
+  '/api/agents/$id/heartbeats': typeof ApiAgentsIdHeartbeatsRouteWithChildren
+  '/api/agents/$id/info': typeof ApiAgentsIdInfoRoute
+  '/api/agents/$id/messages': typeof ApiAgentsIdMessagesRoute
+  '/api/agents/$id/tools': typeof ApiAgentsIdToolsRouteWithChildren
+  '/api/agents/$id/heartbeats/$hbId': typeof ApiAgentsIdHeartbeatsHbIdRoute
+  '/api/agents/$id/tools/$toolId': typeof ApiAgentsIdToolsToolIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/agents/$id' | '/api/trpc/$' | '/api/agents/$id/chat'
+  fullPaths:
+    | '/'
+    | '/captain'
+    | '/tools'
+    | '/agents/$id'
+    | '/api/tools'
+    | '/api/agents/create'
+    | '/api/agents/list'
+    | '/api/tools/$id'
+    | '/api/trpc/$'
+    | '/api/agents/$id/chat'
+    | '/api/agents/$id/heartbeats'
+    | '/api/agents/$id/info'
+    | '/api/agents/$id/messages'
+    | '/api/agents/$id/tools'
+    | '/api/agents/$id/heartbeats/$hbId'
+    | '/api/agents/$id/tools/$toolId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/agents/$id' | '/api/trpc/$' | '/api/agents/$id/chat'
-  id: '__root__' | '/' | '/agents/$id' | '/api/trpc/$' | '/api/agents/$id/chat'
+  to:
+    | '/'
+    | '/captain'
+    | '/tools'
+    | '/agents/$id'
+    | '/api/tools'
+    | '/api/agents/create'
+    | '/api/agents/list'
+    | '/api/tools/$id'
+    | '/api/trpc/$'
+    | '/api/agents/$id/chat'
+    | '/api/agents/$id/heartbeats'
+    | '/api/agents/$id/info'
+    | '/api/agents/$id/messages'
+    | '/api/agents/$id/tools'
+    | '/api/agents/$id/heartbeats/$hbId'
+    | '/api/agents/$id/tools/$toolId'
+  id:
+    | '__root__'
+    | '/'
+    | '/captain'
+    | '/tools'
+    | '/agents/$id'
+    | '/api/tools'
+    | '/api/agents/create'
+    | '/api/agents/list'
+    | '/api/tools/$id'
+    | '/api/trpc/$'
+    | '/api/agents/$id/chat'
+    | '/api/agents/$id/heartbeats'
+    | '/api/agents/$id/info'
+    | '/api/agents/$id/messages'
+    | '/api/agents/$id/tools'
+    | '/api/agents/$id/heartbeats/$hbId'
+    | '/api/agents/$id/tools/$toolId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CaptainRoute: typeof CaptainRoute
+  ToolsRoute: typeof ToolsRoute
   AgentsIdRoute: typeof AgentsIdRoute
+  ApiToolsRoute: typeof ApiToolsRouteWithChildren
+  ApiAgentsCreateRoute: typeof ApiAgentsCreateRoute
+  ApiAgentsListRoute: typeof ApiAgentsListRoute
   ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
   ApiAgentsIdChatRoute: typeof ApiAgentsIdChatRoute
+  ApiAgentsIdHeartbeatsRoute: typeof ApiAgentsIdHeartbeatsRouteWithChildren
+  ApiAgentsIdInfoRoute: typeof ApiAgentsIdInfoRoute
+  ApiAgentsIdMessagesRoute: typeof ApiAgentsIdMessagesRoute
+  ApiAgentsIdToolsRoute: typeof ApiAgentsIdToolsRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/tools': {
+      id: '/tools'
+      path: '/tools'
+      fullPath: '/tools'
+      preLoaderRoute: typeof ToolsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/captain': {
+      id: '/captain'
+      path: '/captain'
+      fullPath: '/captain'
+      preLoaderRoute: typeof CaptainRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/tools': {
+      id: '/api/tools'
+      path: '/api/tools'
+      fullPath: '/api/tools'
+      preLoaderRoute: typeof ApiToolsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/agents/$id': {
@@ -92,6 +280,55 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiTrpcSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/tools/$id': {
+      id: '/api/tools/$id'
+      path: '/$id'
+      fullPath: '/api/tools/$id'
+      preLoaderRoute: typeof ApiToolsIdRouteImport
+      parentRoute: typeof ApiToolsRoute
+    }
+    '/api/agents/list': {
+      id: '/api/agents/list'
+      path: '/api/agents/list'
+      fullPath: '/api/agents/list'
+      preLoaderRoute: typeof ApiAgentsListRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/agents/create': {
+      id: '/api/agents/create'
+      path: '/api/agents/create'
+      fullPath: '/api/agents/create'
+      preLoaderRoute: typeof ApiAgentsCreateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/agents/$id/tools': {
+      id: '/api/agents/$id/tools'
+      path: '/api/agents/$id/tools'
+      fullPath: '/api/agents/$id/tools'
+      preLoaderRoute: typeof ApiAgentsIdToolsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/agents/$id/messages': {
+      id: '/api/agents/$id/messages'
+      path: '/api/agents/$id/messages'
+      fullPath: '/api/agents/$id/messages'
+      preLoaderRoute: typeof ApiAgentsIdMessagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/agents/$id/info': {
+      id: '/api/agents/$id/info'
+      path: '/api/agents/$id/info'
+      fullPath: '/api/agents/$id/info'
+      preLoaderRoute: typeof ApiAgentsIdInfoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/agents/$id/heartbeats': {
+      id: '/api/agents/$id/heartbeats'
+      path: '/api/agents/$id/heartbeats'
+      fullPath: '/api/agents/$id/heartbeats'
+      preLoaderRoute: typeof ApiAgentsIdHeartbeatsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/agents/$id/chat': {
       id: '/api/agents/$id/chat'
       path: '/api/agents/$id/chat'
@@ -99,14 +336,73 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAgentsIdChatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/agents/$id/tools/$toolId': {
+      id: '/api/agents/$id/tools/$toolId'
+      path: '/$toolId'
+      fullPath: '/api/agents/$id/tools/$toolId'
+      preLoaderRoute: typeof ApiAgentsIdToolsToolIdRouteImport
+      parentRoute: typeof ApiAgentsIdToolsRoute
+    }
+    '/api/agents/$id/heartbeats/$hbId': {
+      id: '/api/agents/$id/heartbeats/$hbId'
+      path: '/$hbId'
+      fullPath: '/api/agents/$id/heartbeats/$hbId'
+      preLoaderRoute: typeof ApiAgentsIdHeartbeatsHbIdRouteImport
+      parentRoute: typeof ApiAgentsIdHeartbeatsRoute
+    }
   }
 }
 
+interface ApiToolsRouteChildren {
+  ApiToolsIdRoute: typeof ApiToolsIdRoute
+}
+
+const ApiToolsRouteChildren: ApiToolsRouteChildren = {
+  ApiToolsIdRoute: ApiToolsIdRoute,
+}
+
+const ApiToolsRouteWithChildren = ApiToolsRoute._addFileChildren(
+  ApiToolsRouteChildren,
+)
+
+interface ApiAgentsIdHeartbeatsRouteChildren {
+  ApiAgentsIdHeartbeatsHbIdRoute: typeof ApiAgentsIdHeartbeatsHbIdRoute
+}
+
+const ApiAgentsIdHeartbeatsRouteChildren: ApiAgentsIdHeartbeatsRouteChildren = {
+  ApiAgentsIdHeartbeatsHbIdRoute: ApiAgentsIdHeartbeatsHbIdRoute,
+}
+
+const ApiAgentsIdHeartbeatsRouteWithChildren =
+  ApiAgentsIdHeartbeatsRoute._addFileChildren(
+    ApiAgentsIdHeartbeatsRouteChildren,
+  )
+
+interface ApiAgentsIdToolsRouteChildren {
+  ApiAgentsIdToolsToolIdRoute: typeof ApiAgentsIdToolsToolIdRoute
+}
+
+const ApiAgentsIdToolsRouteChildren: ApiAgentsIdToolsRouteChildren = {
+  ApiAgentsIdToolsToolIdRoute: ApiAgentsIdToolsToolIdRoute,
+}
+
+const ApiAgentsIdToolsRouteWithChildren =
+  ApiAgentsIdToolsRoute._addFileChildren(ApiAgentsIdToolsRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CaptainRoute: CaptainRoute,
+  ToolsRoute: ToolsRoute,
   AgentsIdRoute: AgentsIdRoute,
+  ApiToolsRoute: ApiToolsRouteWithChildren,
+  ApiAgentsCreateRoute: ApiAgentsCreateRoute,
+  ApiAgentsListRoute: ApiAgentsListRoute,
   ApiTrpcSplatRoute: ApiTrpcSplatRoute,
   ApiAgentsIdChatRoute: ApiAgentsIdChatRoute,
+  ApiAgentsIdHeartbeatsRoute: ApiAgentsIdHeartbeatsRouteWithChildren,
+  ApiAgentsIdInfoRoute: ApiAgentsIdInfoRoute,
+  ApiAgentsIdMessagesRoute: ApiAgentsIdMessagesRoute,
+  ApiAgentsIdToolsRoute: ApiAgentsIdToolsRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

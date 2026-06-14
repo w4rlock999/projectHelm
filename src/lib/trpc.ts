@@ -8,3 +8,7 @@ export const trpc = createTRPCReact<AppRouter>()
 // Inferred output types — single source of truth for what the client sees.
 export type RouterOutputs = inferRouterOutputs<AppRouter>
 export type Agent = RouterOutputs['agents']['get']
+export type Tool = RouterOutputs['tools']['list'][number]
+export type AgentToolView = RouterOutputs['tools']['forAgent'][number]
+export type Channel = RouterOutputs['channels']['list'][number]
+export type Heartbeat = RouterOutputs['heartbeats']['list'][number]

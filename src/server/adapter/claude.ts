@@ -9,7 +9,7 @@ const DEFAULT_MODEL = 'sonnet'
 // in the assistant's response. This default is the safe-non-destructive set
 // (file IO scoped to workspace cwd + web access). Bash is intentionally
 // excluded — agents that need shell exec must opt in via their allowedTools.
-const DEFAULT_ALLOWED_TOOLS = [
+export const DEFAULT_ALLOWED_TOOLS = [
   'Read',
   'Glob',
   'Grep',

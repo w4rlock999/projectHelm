@@ -1,0 +1,1 @@
+ALTER TABLE `agents` ADD `is_operator` integer DEFAULT false NOT NULL;

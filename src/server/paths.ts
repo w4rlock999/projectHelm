@@ -8,6 +8,7 @@ export const paths = {
   agentsDir: path.join(helmRoot, 'agents'),
   agentDir: (id: string) => path.join(helmRoot, 'agents', id),
   agentWorkspaceDir: (id: string) => path.join(helmRoot, 'agents', id, 'workspace'),
+  agentToolsDir: (id: string) => path.join(helmRoot, 'agents', id, 'workspace', 'tools'),
   agentClaudeMd: (id: string) => path.join(helmRoot, 'agents', id, 'workspace', 'CLAUDE.md'),
   agentLogsDir: (id: string) => path.join(helmRoot, 'agents', id, 'logs'),
   agentLogFile: (id: string, runId: string) =>

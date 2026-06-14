@@ -1,6 +1,7 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { AgentCard } from '#/components/AgentCard'
 import { CreateAgentDialog } from '#/components/CreateAgentDialog'
+import { Button } from '#/components/ui/button'
 import { trpc } from '#/lib/trpc'
 
 export const Route = createFileRoute('/')({ component: Home })
@@ -13,17 +14,40 @@ function Home() {
     <div className="mx-auto max-w-6xl p-8">
       <header className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">projectHelm</h1>
+          <h1 className="text-3xl font-bold tracking-tight">helmConsole</h1>
           <p className="text-sm text-muted-foreground mt-1">
             Wrap Claude Code into custom agents. Local agent factory POC.
           </p>
         </div>
-        <CreateAgentDialog
-          onCreated={(a) => {
-            navigate({ to: '/agents/$id', params: { id: a.id } })
-          }}
-        />
+        <div className="flex items-center gap-2">
+          <Button variant="outline" asChild>
+            <Link to="/tools">Tool Library</Link>
+          </Button>
+          <Button variant="outline" asChild>
+            <Link to="/captain">⎈ helmCaptain</Link>
+          </Button>
+          <CreateAgentDialog
+            onCreated={(a) => {
+              navigate({ to: '/agents/$id', params: { id: a.id } })
+            }}
+          />
+        </div>
       </header>
+
+      <Link
+        to="/captain"
+        className="mb-6 flex items-center justify-between rounded-lg border bg-muted/30 px-5 py-4 transition-colors hover:bg-muted/50"
+      >
+        <div>
+          <p className="font-medium">⎈ Chat with helmCaptain</p>
+          <p className="text-sm text-muted-foreground">
+            Your operator agent — design agents, draft tools, and plan orchestration.
+          </p>
+        </div>
+        <span className="text-muted-foreground" aria-hidden>
+          →
+        </span>
+      </Link>
 
       {error ? (
         <div className="text-sm text-destructive mb-4">{error.message}</div>

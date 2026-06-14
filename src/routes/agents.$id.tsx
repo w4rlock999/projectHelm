@@ -2,13 +2,20 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState } from 'react'
 import { Button } from '#/components/ui/button'
 import { ChatView } from '#/components/chat/ChatView'
+import { ToolsPanel } from '#/components/agent/ToolsPanel'
+import { ChannelsPanel } from '#/components/agent/ChannelsPanel'
+import { HeartbeatsPanel } from '#/components/agent/HeartbeatsPanel'
 import { trpc } from '#/lib/trpc'
 
 export const Route = createFileRoute('/agents/$id')({ component: AgentPage })
 
+const TABS = ['Chat', 'Tools', 'Interfaces', 'Heartbeats'] as const
+type Tab = (typeof TABS)[number]
+
 function AgentPage() {
   const { id } = Route.useParams()
   const [promptOpen, setPromptOpen] = useState(false)
+  const [tab, setTab] = useState<Tab>('Chat')
 
   const utils = trpc.useUtils()
   const { data: agent, error } = trpc.agents.get.useQuery({ id })
@@ -82,10 +89,29 @@ function AgentPage() {
         </section>
       ) : null}
 
-      <ChatView
-        agent={agent}
-        onSessionAppeared={() => utils.agents.get.invalidate({ id })}
-      />
+      <nav className="mb-4 flex gap-1 border-b">
+        {TABS.map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={
+              'px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ' +
+              (tab === t
+                ? 'border-primary text-foreground'
+                : 'border-transparent text-muted-foreground hover:text-foreground')
+            }
+          >
+            {t}
+          </button>
+        ))}
+      </nav>
+
+      {tab === 'Chat' && (
+        <ChatView agent={agent} onSessionAppeared={() => utils.agents.get.invalidate({ id })} />
+      )}
+      {tab === 'Tools' && <ToolsPanel agentId={agent.id} />}
+      {tab === 'Interfaces' && <ChannelsPanel agentId={agent.id} />}
+      {tab === 'Heartbeats' && <HeartbeatsPanel agentId={agent.id} />}
     </div>
   )
 }
