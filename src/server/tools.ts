@@ -240,14 +240,22 @@ export function renderClaudeMd(agentId: string): void {
     )
 
     if (hasChannel) {
-      lines.push('### send-telegram — message the user on Telegram')
+      lines.push('### send-telegram — your voice on Telegram')
       lines.push(
-        'This is your outbound voice. Use it to reply to the user, report results, or',
-        'push proactive updates from a heartbeat:',
+        'This tool is the ONLY way to deliver a message to the user on Telegram.',
+        'Your normal turn/reply text is NOT sent to them — it is only logged. To',
+        'actually reach the user you must call this tool:',
         '```',
         'tools/send-telegram "your message here"',
         '```',
-        'When a user messages you on Telegram, reply by calling this tool.',
+        '**Responding to messages from external channels.** Some turns are not from',
+        'the local console but arrive from an external channel (Telegram). These are',
+        'clearly marked at the top of the prompt with the channel and sender (e.g.',
+        '`[Inbound message via Telegram]`). When a turn is marked that way, the person',
+        'is NOT watching your reply text — you MUST answer them by calling the matching',
+        'send tool for that channel (`send-telegram`). Compose your full reply, send it',
+        'with the tool, then finish the turn. The same applies to any proactive or',
+        'heartbeat update you want the user to actually see.',
         '',
       )
     }

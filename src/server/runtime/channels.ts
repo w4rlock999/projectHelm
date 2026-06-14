@@ -137,9 +137,22 @@ async function pollLoop(channel: Channel, signal: AbortSignal): Promise<void> {
       if (!text) continue
 
       try {
-        // Run the agent on the inbound message. The agent replies via its
-        // send-telegram tool (steered by CLAUDE.md) — we don't auto-reply here.
-        await runAgentTurn(channel.agentId, text, { source: `telegram:${msg!.chat.id}` })
+        // Run the agent on the inbound message. We frame it as an external-channel
+        // message (sender + chat context) so the agent knows it must reply via its
+        // send-telegram tool — its plain turn text is NOT delivered to Telegram.
+        // The behavioural "how to respond" lives in CLAUDE.md (renderClaudeMd).
+        const from = msg!.from
+        const senderName = from?.first_name ?? from?.username ?? 'unknown'
+        const senderHandle = from?.username ? ` (@${from.username})` : ''
+        const framed =
+          `[Inbound message via Telegram]\n` +
+          `Channel: telegram\n` +
+          `From: ${senderName}${senderHandle}\n` +
+          `Chat ID: ${msg!.chat.id}\n\n` +
+          `${text}\n\n` +
+          `(This message arrived from an external channel. Reply to this person by ` +
+          `calling the send-telegram tool — your normal reply text is not delivered to them.)`
+        await runAgentTurn(channel.agentId, framed, { source: `telegram:${msg!.chat.id}` })
       } catch (err) {
         console.error(`[helm] agent run failed for channel ${channel.id}:`, String(err))
       }
