@@ -1,9 +1,11 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import { db } from '../db/index.ts'
 import { agents } from '../db/schema.ts'
 import { paths } from './paths.ts'
+import { syncAgentTools } from './tools.ts'
+import { DEFAULT_ALLOWED_TOOLS } from './adapter/claude.ts'
 import type { Agent } from '../db/schema.ts'
 
 export interface CreateAgentInput {
@@ -19,7 +21,6 @@ export function createAgent(input: CreateAgentInput): Agent {
   const logsDir = paths.agentLogsDir(id)
   mkdirSync(workspaceDir, { recursive: true })
   mkdirSync(logsDir, { recursive: true })
-  writeFileSync(paths.agentClaudeMd(id), input.systemPrompt)
 
   const row = {
     id,
@@ -28,14 +29,18 @@ export function createAgent(input: CreateAgentInput): Agent {
     allowedTools: input.allowedTools?.length ? input.allowedTools.join(',') : null,
     model: input.model ?? null,
     claudeSessionId: null,
+    isOperator: false,
     createdAt: new Date(),
   }
   db.insert(agents).values(row).run()
+  // Materializes built-in tools (heartbeat) + writes CLAUDE.md with the tools block.
+  syncAgentTools(id)
   return row as Agent
 }
 
+/** The user-facing fleet — excludes the operator (helmCaptain). */
 export function listAgents(): Agent[] {
-  return db.select().from(agents).all()
+  return db.select().from(agents).where(eq(agents.isOperator, false)).all()
 }
 
 export function loadAgent(id: string): Agent | null {
@@ -44,7 +49,8 @@ export function loadAgent(id: string): Agent | null {
 
 export function updateAgentSystemPrompt(id: string, systemPrompt: string): void {
   db.update(agents).set({ systemPrompt }).where(eq(agents.id, id)).run()
-  writeFileSync(paths.agentClaudeMd(id), systemPrompt)
+  // Re-render CLAUDE.md so the managed tools block is preserved below the prompt.
+  syncAgentTools(id)
 }
 
 export function updateAgentSessionId(id: string, sessionId: string): void {
@@ -67,11 +73,19 @@ export function agentRuntime(a: Agent): {
   allowedTools?: string[] | null
   model?: string | null
 } {
+  // Every agent invokes tools via Bash — regular agents have the built-in
+  // heartbeat tool, and helmCaptain now has the helm CLI — so Bash is always
+  // in the allow-list.
+  const base = a.allowedTools
+    ? a.allowedTools.split(',').map((s) => s.trim()).filter(Boolean)
+    : [...DEFAULT_ALLOWED_TOOLS]
+  if (!base.includes('Bash')) base.push('Bash')
+
   return {
     id: a.id,
     workspaceDir: paths.agentWorkspaceDir(a.id),
     claudeSessionId: a.claudeSessionId,
-    allowedTools: a.allowedTools ? a.allowedTools.split(',').map((s) => s.trim()) : null,
+    allowedTools: base,
     model: a.model,
   }
 }

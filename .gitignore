@@ -134,3 +134,21 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# Helm runtime state (agent workspaces, sqlite DB, etc.)
+.helm/
+
+# Local agent state
+.agents/
+
+# Claude Code local settings (keep shared config, ignore machine-local + secrets)
+.claude/settings.local.json
+.claude/**/*.local.json
+
+# SQLite databases & write-ahead logs
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+*.db-shm
+*.db-wal
