@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '#/components/ui/button'
 import { Textarea } from '#/components/ui/textarea'
+import { cn } from '#/lib/utils'
 import { postSSE } from '#/lib/sse'
 import type { ClaudeEvent } from '#/server/adapter/types'
 import type { Agent } from '#/lib/trpc'
@@ -9,9 +10,19 @@ import { MessageBubble, type AssistantSegment, type ChatMessage } from './Messag
 interface Props {
   agent: Agent
   onSessionAppeared?: () => void
+  /** Tailwind height class for the whole chat column. */
+  heightClassName?: string
+  /** `glass` themes the surface for the warm matte-glass home page. */
+  variant?: 'default' | 'glass'
 }
 
-export function ChatView({ agent, onSessionAppeared }: Props) {
+export function ChatView({
+  agent,
+  onSessionAppeared,
+  heightClassName = 'h-[calc(100vh-12rem)]',
+  variant = 'default',
+}: Props) {
+  const isGlass = variant === 'glass'
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [composer, setComposer] = useState('')
   const [streaming, setStreaming] = useState(false)
@@ -114,23 +125,39 @@ export function ChatView({ agent, onSessionAppeared }: Props) {
     }
   }
 
+  const glassButton =
+    'border border-white/20 bg-white/10 text-[var(--warm-ink)] shadow-none hover:bg-white/20'
+
   return (
-    <div className="flex flex-col h-[calc(100vh-12rem)]">
-      <div className="flex-1 overflow-y-auto rounded-lg border bg-background/30">
+    <div className={cn('flex flex-col', heightClassName)}>
+      <div
+        className={cn(
+          'flex-1 overflow-y-auto border',
+          isGlass ? 'rounded-2xl border-white/10 bg-black/15' : 'rounded-lg bg-background/30',
+        )}
+      >
         <div className="p-4 space-y-4">
           {messages.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">
-              Send a message to start the conversation.
-            </p>
+            <div
+              className={cn(
+                'flex flex-col items-center justify-center gap-3 py-16 text-center',
+                isGlass ? 'text-[var(--warm-ink-soft)]' : 'text-muted-foreground',
+              )}
+            >
+              <span aria-hidden className={cn('text-3xl', isGlass && 'opacity-70')}>
+                ⎈
+              </span>
+              <p className="text-sm">Send a message to start the conversation.</p>
+            </div>
           ) : (
-            messages.map((m) => <MessageBubble key={m.id} message={m} />)
+            messages.map((m) => <MessageBubble key={m.id} message={m} variant={variant} />)
           )}
           <div ref={scrollEndRef} />
         </div>
       </div>
 
       {error ? (
-        <p className="text-sm text-destructive mt-2">{error}</p>
+        <p className={cn('text-sm mt-2', isGlass ? 'text-red-200' : 'text-destructive')}>{error}</p>
       ) : null}
 
       <div className="mt-3 flex gap-2 items-end">
@@ -143,14 +170,22 @@ export function ChatView({ agent, onSessionAppeared }: Props) {
           }
           rows={2}
           disabled={streaming}
-          className="resize-none"
+          className={cn(
+            'resize-none',
+            isGlass &&
+              'border-white/15 bg-white/5 text-[var(--warm-ink)] placeholder:text-[var(--warm-ink-faint)] focus-visible:border-white/30 focus-visible:ring-white/10',
+          )}
         />
         {streaming ? (
-          <Button variant="outline" onClick={cancel}>
+          <Button variant="outline" onClick={cancel} className={cn(isGlass && glassButton)}>
             Stop
           </Button>
         ) : (
-          <Button onClick={send} disabled={!composer.trim()}>
+          <Button
+            onClick={send}
+            disabled={!composer.trim()}
+            className={cn(isGlass && glassButton)}
+          >
             Send
           </Button>
         )}
