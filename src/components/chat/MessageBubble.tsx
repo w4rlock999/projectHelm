@@ -1,4 +1,5 @@
 import { Badge } from '#/components/ui/badge'
+import { cn } from '#/lib/utils'
 
 export interface TextSegment {
   type: 'text'
@@ -28,11 +29,24 @@ export type ChatMessage =
       durationMs?: number
     }
 
-export function MessageBubble({ message }: { message: ChatMessage }) {
+export function MessageBubble({
+  message,
+  variant = 'default',
+}: {
+  message: ChatMessage
+  variant?: 'default' | 'glass'
+}) {
+  const isGlass = variant === 'glass'
+
   if (message.role === 'user') {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[80%] rounded-lg bg-primary text-primary-foreground px-4 py-2 text-sm whitespace-pre-wrap">
+        <div
+          className={cn(
+            'max-w-[80%] rounded-lg px-4 py-2 text-sm whitespace-pre-wrap',
+            isGlass ? 'bg-white/15 text-[var(--warm-ink)]' : 'bg-primary text-primary-foreground',
+          )}
+        >
           {message.text}
         </div>
       </div>
@@ -43,9 +57,19 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
   const hasContent = visible.length > 0
   return (
     <div className="flex justify-start">
-      <div className="max-w-[80%] rounded-lg bg-muted px-4 py-2 text-sm space-y-2">
+      <div
+        className={cn(
+          'max-w-[80%] rounded-lg px-4 py-2 text-sm space-y-2',
+          isGlass ? 'border border-white/10 bg-white/[0.06] text-[var(--warm-ink)]' : 'bg-muted',
+        )}
+      >
         {!hasContent ? (
-          <span className="text-muted-foreground inline-block">
+          <span
+            className={cn(
+              'inline-block',
+              isGlass ? 'text-[var(--warm-ink-faint)]' : 'text-muted-foreground',
+            )}
+          >
             <span className="inline-block animate-pulse">●</span> thinking…
           </span>
         ) : (
@@ -74,7 +98,12 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
           })
         )}
         {message.complete && typeof message.cost === 'number' ? (
-          <p className="text-[10px] text-muted-foreground/70 pt-1">
+          <p
+            className={cn(
+              'text-[10px] pt-1',
+              isGlass ? 'text-[var(--warm-ink-faint)]' : 'text-muted-foreground/70',
+            )}
+          >
             ${message.cost.toFixed(4)}
             {message.durationMs ? ` · ${(message.durationMs / 1000).toFixed(1)}s` : ''}
           </p>

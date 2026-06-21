@@ -345,3 +345,191 @@ a {
     color: var(--foreground);
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Warm matte-glass home — scoped to .helm-home so other routes keep   */
+/* the existing light theme. Calm terracotta→dusk gradient + glass.    */
+/* ------------------------------------------------------------------ */
+
+.helm-home {
+  --warm-ink: #fbf0e8;
+  --warm-ink-soft: rgba(251, 240, 232, 0.62);
+  --warm-ink-faint: rgba(251, 240, 232, 0.4);
+
+  position: relative;
+  min-height: 100vh;
+  width: 100%;
+  overflow: hidden;
+  color: var(--warm-ink);
+  /* Ember Dusk — default theme */
+  background:
+    radial-gradient(1200px 760px at 12% -8%, rgba(232, 142, 94, 0.62), transparent 56%),
+    radial-gradient(760px 520px at 80% 26%, rgba(204, 98, 58, 0.3), transparent 60%),
+    radial-gradient(1000px 760px at 92% 118%, rgba(14, 9, 7, 0.94), transparent 52%),
+    linear-gradient(152deg, #c4683c 0%, #aa5430 27%, #6f3b26 55%, #2c1a14 82%, #150d0a 100%);
+}
+
+/* Atelier — warm studio corner washed in soft raking light (Aesop-style).
+   Layered top→bottom: lit floor band, left light spill, narrow lit edge,
+   shadowed top-right corner, then the base wall gradient. */
+.helm-home.theme-atelier {
+  --warm-ink: #f4ede1;
+  --warm-ink-soft: rgba(244, 237, 225, 0.66);
+  --warm-ink-faint: rgba(244, 237, 225, 0.42);
+  background:
+    linear-gradient(0deg, rgba(206, 190, 166, 0.6) 0%, rgba(206, 190, 166, 0) 18%),
+    radial-gradient(74% 135% at -22% 48%, rgba(248, 241, 227, 0.9) 0%, rgba(248, 241, 227, 0.28) 24%, rgba(248, 241, 227, 0) 46%),
+    linear-gradient(90deg, rgba(250, 243, 228, 0.3) 0%, rgba(250, 243, 228, 0.12) 12%, rgba(250, 243, 228, 0) 28%),
+    radial-gradient(90% 90% at 100% 0%, rgba(38, 30, 22, 0.5) 0%, transparent 56%),
+    linear-gradient(155deg, #6a5746 0%, #564636 55%, #463829 100%);
+}
+
+/* Smoked Olive — grainy desaturated olive-taupe, darker pool center-right */
+.helm-home.theme-smoked {
+  --warm-ink: #f2eee4;
+  --warm-ink-soft: rgba(242, 238, 228, 0.62);
+  --warm-ink-faint: rgba(242, 238, 228, 0.4);
+  background:
+    radial-gradient(120% 130% at 60% 52%, rgba(58, 54, 40, 0.62), transparent 60%),
+    linear-gradient(145deg, #9a917d 0%, #837c68 36%, #66614e 66%, #4a4636 100%);
+}
+
+/* Pale Linen — warm greige with a luminous diagonal sweep; a LIGHT theme,
+   so the ink flips dark. Bright pool lower-center-right + soft top-right glow. */
+.helm-home.theme-linen {
+  --warm-ink: #3c372b;
+  --warm-ink-soft: rgba(60, 55, 43, 0.66);
+  --warm-ink-faint: rgba(60, 55, 43, 0.42);
+  background:
+    radial-gradient(95% 80% at 68% 70%, rgba(243, 238, 226, 0.9) 0%, rgba(243, 238, 226, 0) 58%),
+    radial-gradient(70% 60% at 82% 18%, rgba(236, 230, 216, 0.55) 0%, rgba(236, 230, 216, 0) 60%),
+    linear-gradient(158deg, #c2bba6 0%, #cdc6b1 40%, #d8d1bf 68%, #c5bda8 100%);
+}
+
+/* Deep Tide — cool lagoon teal into ocean dark */
+.helm-home.theme-tide {
+  --warm-ink: #e9f6f3;
+  --warm-ink-soft: rgba(233, 246, 243, 0.62);
+  --warm-ink-faint: rgba(233, 246, 243, 0.4);
+  background:
+    radial-gradient(1100px 720px at 15% -10%, rgba(56, 189, 182, 0.5), transparent 55%),
+    radial-gradient(800px 560px at 85% 22%, rgba(34, 120, 140, 0.4), transparent 60%),
+    radial-gradient(1000px 780px at 90% 120%, rgba(5, 18, 26, 0.95), transparent 50%),
+    linear-gradient(155deg, #2d8a8f 0%, #1f6a72 28%, #134652 56%, #0a2230 82%, #06141c 100%);
+}
+
+/* Film grain overlay — fractal-noise SVG. Hidden by default; the grainy
+   themes (atelier / smoked / linen) switch it on for that photographed feel. */
+.helm-grain {
+  display: none;
+}
+
+.helm-home.theme-atelier .helm-grain,
+.helm-home.theme-smoked .helm-grain,
+.helm-home.theme-linen .helm-grain {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
+  opacity: 0.42;
+}
+
+/* Linen wants a stronger, visible speckle like the reference. */
+.helm-home.theme-linen .helm-grain {
+  mix-blend-mode: overlay;
+  opacity: 0.6;
+}
+
+/* faint film grain / vignette so the matte gradient never bands */
+.helm-home::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 22% 12%, rgba(255, 255, 255, 0.1), transparent 40%),
+    radial-gradient(circle at 84% 88%, rgba(0, 0, 0, 0.28), transparent 46%);
+  mix-blend-mode: soft-light;
+  opacity: 0.7;
+}
+
+/* ------------------------------------------------------------------ */
+/* helmCaptain: main-card swap transition + boot loader               */
+/* ------------------------------------------------------------------ */
+
+/* The captain interface fades + lifts in when it replaces the fleet. */
+.captain-enter {
+  animation: captain-enter 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes captain-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Slowly turning helm at the centre of the boot loader. */
+.captain-helm {
+  animation: captain-spin 3.4s linear infinite;
+  filter: drop-shadow(0 0 22px rgba(232, 142, 94, 0.6));
+}
+
+@keyframes captain-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Sonar-style ring that expands and fades out behind the helm. */
+.captain-ring {
+  animation: captain-ring 1.9s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes captain-ring {
+  0% {
+    transform: scale(0.5);
+    opacity: 0.65;
+  }
+  100% {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+}
+
+/* Sweeping highlight across the progress track. */
+.captain-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(251, 240, 232, 0.45) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: captain-shimmer 1.25s ease-in-out infinite;
+}
+
+@keyframes captain-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .captain-enter,
+  .captain-helm,
+  .captain-ring,
+  .captain-shimmer {
+    animation: none;
+  }
+}
