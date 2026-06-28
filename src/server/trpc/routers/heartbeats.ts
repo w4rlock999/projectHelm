@@ -32,6 +32,8 @@ export const heartbeatsRouter = router({
         name: z.string().max(80).nullish(),
         cron: cronField,
         prompt: z.string().min(1),
+        targetType: z.enum(['main', 'chat']).optional(),
+        targetChatId: z.string().nullish(),
       }),
     )
     .mutation(({ input }) => createHeartbeat(input)),
@@ -44,6 +46,8 @@ export const heartbeatsRouter = router({
         cron: cronField.optional(),
         prompt: z.string().min(1).optional(),
         enabled: z.boolean().optional(),
+        targetType: z.enum(['main', 'chat']).optional(),
+        targetChatId: z.string().nullish(),
       }),
     )
     .mutation(({ input }) => {

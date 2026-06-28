@@ -8,7 +8,7 @@ import {
 import { randomUUID } from 'node:crypto'
 import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '../db/index.ts'
-import { agents, agentTools, channels, tools } from '../db/schema.ts'
+import { agents, agentTools, connections, tools } from '../db/schema.ts'
 import { paths } from './paths.ts'
 import type { Tool } from '../db/schema.ts'
 
@@ -134,10 +134,10 @@ export function unassignTool(agentId: string, toolId: string): void {
 
 // ── Materialization ─────────────────────────────────────────────────────────
 
-/** True if the agent has a usable (chat-linked) Telegram channel. */
-function agentHasChannel(agentId: string): boolean {
+/** True if the agent has a Telegram connection (so it gets a send-telegram tool). */
+function agentHasConnection(agentId: string): boolean {
   return (
-    db.select().from(channels).where(eq(channels.agentId, agentId)).all().length > 0
+    db.select().from(connections).where(eq(connections.agentId, agentId)).all().length > 0
   )
 }
 
@@ -163,8 +163,8 @@ export function materializeAgentTools(agentId: string): void {
   } else {
     // Built-in: heartbeat self-config (always present on regular agents).
     writeExecutable(`${dir}/heartbeat`, heartbeatToolSource(agentId))
-    // Built-in: send-telegram (only when a channel is linked).
-    if (agentHasChannel(agentId)) {
+    // Built-in: send-telegram (only when a connection exists).
+    if (agentHasConnection(agentId)) {
       writeExecutable(`${dir}/send-telegram`, sendTelegramToolSource(agentId))
     }
   }
@@ -196,7 +196,7 @@ export function renderClaudeMd(agentId: string): void {
   if (!agent) return
 
   const custom = listAgentTools(agentId)
-  const hasChannel = agentHasChannel(agentId)
+  const hasConnection = agentHasConnection(agentId)
 
   const lines: string[] = [TOOLS_BLOCK_START, '', '## Tools available to you', '']
   lines.push(
@@ -215,7 +215,7 @@ export function renderClaudeMd(agentId: string): void {
       '```',
       'tools/helm context          # snapshot: all agents + the tool library',
       'tools/helm agent ls         # list agents',
-      "tools/helm agent get <id>   # one agent's full config (prompt, tools, channels, heartbeats)",
+      "tools/helm agent get <id>   # one agent's full config (prompt, tools, connections, heartbeats)",
       'tools/helm tool ls          # the shared tool library',
       '```',
       'Write commands (creating/configuring agents, authoring tools) are coming next —',
@@ -237,25 +237,39 @@ export function renderClaudeMd(agentId: string): void {
       '```',
       'Cron is standard 5-field: `minute hour day-of-month month day-of-week`.',
       '',
+      '**Where a heartbeat is delivered (`--target`).** Default is `main` — the',
+      'fired turn runs in this (console) session and is not sent anywhere unless you',
+      'call send-telegram. Use `--target chat --chat <id>` to fire the heartbeat',
+      'inside a specific Telegram chat (it runs in that chat and send-telegram',
+      'defaults to replying there). The `<id>` is the `Chat ID` shown at the top of',
+      'an inbound Telegram message.',
+      '```',
+      'tools/heartbeat add --cron "0 9 * * *" --prompt "Good morning!" --target chat --chat 847392011',
+      '```',
+      '',
     )
 
-    if (hasChannel) {
+    if (hasConnection) {
       lines.push('### send-telegram — your voice on Telegram')
       lines.push(
         'This tool is the ONLY way to deliver a message to the user on Telegram.',
         'Your normal turn/reply text is NOT sent to them — it is only logged. To',
         'actually reach the user you must call this tool:',
         '```',
-        'tools/send-telegram "your message here"',
+        'tools/send-telegram "your message here"            # reply to the current chat',
+        'tools/send-telegram --chat <id> "your message"     # send to a specific chat',
         '```',
-        '**Responding to messages from external channels.** Some turns are not from',
-        'the local console but arrive from an external channel (Telegram). These are',
-        'clearly marked at the top of the prompt with the channel and sender (e.g.',
+        'By default it replies to the chat the current turn belongs to. Use `--chat',
+        '<id>` to target a different chat (the `Chat ID` is shown at the top of an',
+        'inbound Telegram message).',
+        '**Responding to messages from external connections.** Some turns are not from',
+        'the local console but arrive from an external connection (Telegram). These are',
+        'clearly marked at the top of the prompt with the connection and sender (e.g.',
         '`[Inbound message via Telegram]`). When a turn is marked that way, the person',
-        'is NOT watching your reply text — you MUST answer them by calling the matching',
-        'send tool for that channel (`send-telegram`). Compose your full reply, send it',
-        'with the tool, then finish the turn. The same applies to any proactive or',
-        'heartbeat update you want the user to actually see.',
+        'is NOT watching your reply text — you MUST answer them by calling',
+        '`send-telegram` (it replies to that same chat by default). Compose your full',
+        'reply, send it with the tool, then finish the turn. The same applies to any',
+        'proactive or heartbeat update you want the user to actually see.',
         '',
       )
     }
@@ -319,10 +333,17 @@ async function api(method, path, body) {
   } else if (cmd === 'add') {
     const f = flags(argv.slice(1)).out;
     if (!f.cron || !f.prompt) {
-      console.error('usage: heartbeat add --cron "<expr>" --prompt "<text>" [--name "<name>"]');
+      console.error('usage: heartbeat add --cron "<expr>" --prompt "<text>" [--name "<name>"] [--target main|chat] [--chat <id>]');
       process.exit(1);
     }
-    const r = await api('POST', '/heartbeats', { cron: f.cron, prompt: f.prompt, name: f.name });
+    if (f.target === 'chat' && !f.chat) {
+      console.error('--target chat requires --chat <id>');
+      process.exit(1);
+    }
+    const body = { cron: f.cron, prompt: f.prompt, name: f.name };
+    if (f.target) body.targetType = f.target;
+    if (f.chat) body.targetChatId = f.chat;
+    const r = await api('POST', '/heartbeats', body);
     console.log('created heartbeat ' + r.id);
   } else if (cmd === 'update') {
     const id = argv[1];
@@ -332,6 +353,8 @@ async function api(method, path, body) {
     if (f.prompt) patch.prompt = f.prompt;
     if (f.name) patch.name = f.name;
     if (f.enabled !== undefined) patch.enabled = f.enabled === 'true';
+    if (f.target) patch.targetType = f.target;
+    if (f.chat) patch.targetChatId = f.chat;
     await api('PATCH', '/heartbeats/' + id, patch);
     console.log('updated ' + id);
   } else if (cmd === 'rm') {
@@ -489,14 +512,23 @@ function sendTelegramToolSource(agentId: string): string {
 'use strict';
 const AGENT_ID = ${JSON.stringify(agentId)};
 const BASE = ${JSON.stringify(BASE_URL)};
-const text = process.argv.slice(2).join(' ').trim();
-if (!text) { console.error('usage: send-telegram "<message>"'); process.exit(1); }
+
+// Parse an optional --chat <id>; everything else joins into the message text.
+const argv = process.argv.slice(2);
+let chatId = process.env.HELM_CHAT_ID || undefined;
+const parts = [];
+for (let i = 0; i < argv.length; i++) {
+  if (argv[i] === '--chat') { chatId = argv[++i]; continue; }
+  parts.push(argv[i]);
+}
+const text = parts.join(' ').trim();
+if (!text) { console.error('usage: send-telegram [--chat <id>] "<message>"'); process.exit(1); }
 
 (async function () {
   const res = await fetch(BASE + '/api/agents/' + AGENT_ID + '/messages', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ text: text }),
+    body: JSON.stringify({ text: text, chatId: chatId }),
   });
   const t = await res.text();
   if (!res.ok) { console.error('send failed ' + res.status + ': ' + t); process.exit(1); }

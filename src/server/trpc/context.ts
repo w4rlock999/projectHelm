@@ -7,7 +7,7 @@ export interface Context {
 }
 
 export function createContext({ req }: { req: Request }): Context {
-  // Boot background loops (heartbeat scheduler + channel pollers) on first request.
+  // Boot background loops (heartbeat scheduler + connection pollers) on first request.
   ensureRuntimeStarted()
   return { req }
 }

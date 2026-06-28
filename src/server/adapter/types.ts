@@ -102,6 +102,9 @@ export interface AdapterContext {
   }
   prompt: string
   signal: AbortSignal
+  // Extra env for the spawned Claude process — e.g. HELM_CHAT_ID so the
+  // send-telegram tool knows which chat to reply to by default.
+  env?: Record<string, string>
   onEvent: (event: ClaudeEvent) => void
   onLog: (stream: 'stdout' | 'stderr', chunk: string) => void
   onSessionId: (sessionId: string) => void

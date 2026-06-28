@@ -4,6 +4,7 @@ import { runClaude } from './adapter/claude.ts'
 import { agentRuntime, loadAgent, updateAgentSessionId } from './agents.ts'
 import { paths } from './paths.ts'
 import type { ClaudeEvent } from './adapter/types.ts'
+import type { Agent } from '../db/schema.ts'
 
 export interface AgentTurnResult {
   runId: string
@@ -13,7 +14,29 @@ export interface AgentTurnResult {
   isError: boolean
 }
 
-// Per-agent serialization. Headless triggers (heartbeats, inbound channel
+/**
+ * The session a turn resumes/persists. Decoupling this from the agent lets a
+ * turn run against either the agent's shared session (browser, heartbeats,
+ * sessionScope='agent') or a per-chat session (sessionScope='chat').
+ */
+export interface SessionStore {
+  get(): string | null
+  set(sid: string): void
+}
+
+/** Agent-backed session: the shared `agents.claudeSessionId`. The default. */
+export function agentStore(agent: Pick<Agent, 'id' | 'claudeSessionId'>): SessionStore {
+  let current = agent.claudeSessionId
+  return {
+    get: () => current,
+    set: (sid) => {
+      current = sid
+      updateAgentSessionId(agent.id, sid)
+    },
+  }
+}
+
+// Per-agent serialization. Headless triggers (heartbeats, inbound connection
 // messages) can fire concurrently for the same agent; running two `--resume`
 // turns against one Claude session at once corrupts it. We chain each agent's
 // turns through a single in-flight promise so they execute one at a time.
@@ -41,31 +64,48 @@ function enqueue<T>(agentId: string, task: () => Promise<T>): Promise<T> {
 export function runAgentTurn(
   agentId: string,
   prompt: string,
-  opts: { source?: string; signal?: AbortSignal } = {},
+  opts: {
+    source?: string
+    signal?: AbortSignal
+    /** Session to resume/persist. Defaults to the agent's shared session. */
+    session?: SessionStore
+    /** Telegram chat this turn belongs to; injected as HELM_CHAT_ID. */
+    chatId?: string
+    /** Per-event hook (e.g. SSE streaming for the browser chat route). */
+    onEvent?: (evt: ClaudeEvent) => void
+    /** Fired once with the runId before streaming starts. */
+    onRunId?: (runId: string) => void
+  } = {},
 ): Promise<AgentTurnResult> {
   return enqueue(agentId, async () => {
     const agent = loadAgent(agentId)
     if (!agent) throw new Error(`agent ${agentId} not found`)
 
     const runId = randomUUID()
+    opts.onRunId?.(runId)
     mkdirSync(paths.agentLogsDir(agent.id), { recursive: true })
     const logStream = createWriteStream(paths.agentLogFile(agent.id, runId), { flags: 'a' })
     logStream.write(
       JSON.stringify({ type: 'helm_meta', source: opts.source ?? 'manual', prompt, runId }) + '\n',
     )
 
+    const session = opts.session ?? agentStore(agent)
     let text = ''
-    let sessionId: string | null = agent.claudeSessionId
+    let sessionId: string | null = session.get()
     let isError = false
     const signal = opts.signal ?? new AbortController().signal
 
     try {
       const { code } = await runClaude({
-        agent: agentRuntime(agent),
+        // Resume the store's session (per-chat or agent), not whatever the
+        // agent row happens to hold.
+        agent: { ...agentRuntime(agent), claudeSessionId: session.get() },
         prompt,
         signal,
+        env: opts.chatId ? { HELM_CHAT_ID: opts.chatId } : undefined,
         onEvent: (evt: ClaudeEvent) => {
           logStream.write(JSON.stringify(evt) + '\n')
+          opts.onEvent?.(evt)
           if (evt.type === 'result') {
             text = evt.result ?? ''
             isError = evt.is_error
@@ -75,8 +115,10 @@ export function runAgentTurn(
           /* stdout already captured via onEvent; stderr is debug-only */
         },
         onSessionId: (sid) => {
-          sessionId = sid
-          if (sid !== agent.claudeSessionId) updateAgentSessionId(agent.id, sid)
+          if (sid !== sessionId) {
+            sessionId = sid
+            session.set(sid)
+          }
         },
       })
       return { runId, text, sessionId, code, isError }

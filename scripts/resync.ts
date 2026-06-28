@@ -1,7 +1,7 @@
 /**
  * Re-materialize tools + re-render CLAUDE.md for every agent. Run after changing
  * renderClaudeMd / materializeAgentTools so existing agents pick up the new
- * managed tools block without needing a tool/channel mutation to trigger a sync.
+ * managed tools block without needing a tool/connection mutation to trigger a sync.
  */
 import { db } from '../src/db/index.ts'
 import { agents } from '../src/db/schema.ts'

@@ -6,6 +6,7 @@ import {
   listAgents,
   loadAgent,
   resetAgentSession,
+  updateAgentSessionScope,
   updateAgentSystemPrompt,
 } from '../../agents.ts'
 import { publicProcedure, router } from '../init.ts'
@@ -37,12 +38,14 @@ export const agentsRouter = router({
       z.object({
         id: z.string().uuid(),
         systemPrompt: z.string().min(1).optional(),
+        sessionScope: z.enum(['chat', 'agent']).optional(),
       }),
     )
     .mutation(({ input }) => {
       const agent = loadAgent(input.id)
       if (!agent) throw new TRPCError({ code: 'NOT_FOUND' })
       if (input.systemPrompt) updateAgentSystemPrompt(input.id, input.systemPrompt)
+      if (input.sessionScope) updateAgentSessionScope(input.id, input.sessionScope)
       return loadAgent(input.id)!
     }),
 

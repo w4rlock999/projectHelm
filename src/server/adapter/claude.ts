@@ -49,6 +49,7 @@ export function runClaude(ctx: AdapterContext): Promise<{ code: number | null }>
   const proc = spawn('claude', args, {
     cwd: ctx.agent.workspaceDir,
     stdio: ['pipe', 'pipe', 'pipe'],
+    env: ctx.env ? { ...process.env, ...ctx.env } : process.env,
   })
 
   proc.stdin.write(ctx.prompt)

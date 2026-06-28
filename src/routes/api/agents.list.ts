@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { listAgents } from '../../server/agents.ts'
 import { listAgentTools } from '../../server/tools.ts'
-import { listChannels } from '../../server/runtime/channels.ts'
+import { listConnections } from '../../server/runtime/connections.ts'
 import { listHeartbeats } from '../../server/runtime/heartbeats.ts'
 
 // GET /api/agents/list — the fleet (excludes helmCaptain) with per-agent counts.
@@ -17,7 +17,7 @@ export const Route = createFileRoute('/api/agents/list')({
           model: a.model ?? 'sonnet',
           hasSession: !!a.claudeSessionId,
           toolCount: listAgentTools(a.id).length,
-          channelCount: listChannels(a.id).length,
+          connectionCount: listConnections(a.id).length,
           heartbeatCount: listHeartbeats(a.id).length,
           createdAt: a.createdAt,
         }))

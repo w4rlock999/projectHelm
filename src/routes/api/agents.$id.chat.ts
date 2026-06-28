@@ -1,13 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { createWriteStream, mkdirSync } from "node:fs";
-import { randomUUID } from "node:crypto";
-import { runClaude } from "../../server/adapter/claude.ts";
-import {
-  agentRuntime,
-  loadAgent,
-  updateAgentSessionId,
-} from "../../server/agents.ts";
-import { paths } from "../../server/paths.ts";
+import { loadAgent } from "../../server/agents.ts";
+import { runAgentTurn } from "../../server/run.ts";
 import type { ApiHandlerCtx, RouteParams } from "../../server/api-route.ts";
 import type { ClaudeEvent } from "../../server/adapter/types.ts";
 
@@ -36,15 +29,6 @@ export const Route = createFileRoute("/api/agents/$id/chat")({
           );
         }
 
-        const runId = randomUUID();
-        mkdirSync(paths.agentLogsDir(agent.id), { recursive: true });
-        const logStream = createWriteStream(
-          paths.agentLogFile(agent.id, runId),
-          {
-            flags: "a",
-          },
-        );
-
         const encoder = new TextEncoder();
         const stream = new ReadableStream<Uint8Array>({
           async start(controller) {
@@ -57,26 +41,17 @@ export const Route = createFileRoute("/api/agents/$id/chat")({
               }
             };
 
-            // Tell the client which runId this stream belongs to (for log retrieval).
-            send("open", { runId, agentId: agent.id });
-
             try {
-              const result = await runClaude({
-                agent: agentRuntime(agent),
-                prompt: message,
+              // Route through runAgentTurn so the browser shares the per-agent
+              // serialization chain with Telegram/heartbeat turns — no two
+              // `--resume` against one session at once. Uses the default
+              // (agent/console) session; runAgentTurn writes the ndjson log.
+              const result = await runAgentTurn(agent.id, message, {
+                source: "chat",
                 signal: request.signal,
-                onEvent: (evt: ClaudeEvent) => {
-                  logStream.write(JSON.stringify(evt) + "\n");
-                  send("claude", evt);
-                },
-                onLog: () => {
-                  /* stdout already covered via onEvent; stderr is debug-only */
-                },
-                onSessionId: (sid) => {
-                  if (sid !== agent.claudeSessionId) {
-                    updateAgentSessionId(agent.id, sid);
-                  }
-                },
+                // Tell the client which runId this stream belongs to (for log retrieval).
+                onRunId: (runId) => send("open", { runId, agentId: agent.id }),
+                onEvent: (evt: ClaudeEvent) => send("claude", evt),
               });
               send("end", { code: result.code });
             } catch (err) {
@@ -84,7 +59,6 @@ export const Route = createFileRoute("/api/agents/$id/chat")({
                 message: err instanceof Error ? err.message : String(err),
               });
             } finally {
-              logStream.end();
               try {
                 controller.close();
               } catch {
