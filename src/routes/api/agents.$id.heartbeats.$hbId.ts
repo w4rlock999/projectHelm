@@ -11,7 +11,14 @@ export const Route = createFileRoute('/api/agents/$id/heartbeats/$hbId')({
     handlers: {
       PATCH: async ({ params, request }: ApiHandlerCtx<P>) => {
         ensureRuntimeStarted()
-        let body: { cron?: string; prompt?: string; name?: string; enabled?: boolean }
+        let body: {
+          cron?: string
+          prompt?: string
+          name?: string
+          enabled?: boolean
+          targetType?: string
+          targetChatId?: string | null
+        }
         try {
           body = (await request.json()) as typeof body
         } catch {

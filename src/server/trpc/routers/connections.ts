@@ -1,18 +1,20 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import {
-  createChannel,
-  deleteChannel,
-  listChannels,
-  updateChannel,
-} from '../../runtime/channels.ts'
-import { getMe } from '../../channels/telegram.ts'
+  createConnection,
+  deleteConnection,
+  listAgentChats,
+  listConnections,
+  setChatStatus,
+  updateConnection,
+} from '../../runtime/connections.ts'
+import { getMe } from '../../connections/telegram.ts'
 import { publicProcedure, router } from '../init.ts'
 
-export const channelsRouter = router({
+export const connectionsRouter = router({
   list: publicProcedure
     .input(z.object({ agentId: z.string().uuid() }))
-    .query(({ input }) => listChannels(input.agentId)),
+    .query(({ input }) => listConnections(input.agentId)),
 
   // Validate a token without persisting — powers the wizard's "Verify" step.
   verifyToken: publicProcedure
@@ -31,12 +33,11 @@ export const channelsRouter = router({
       z.object({
         agentId: z.string().uuid(),
         token: z.string().min(1),
-        chatId: z.string().nullish(),
       }),
     )
     .mutation(async ({ input }) => {
       try {
-        return await createChannel(input)
+        return await createConnection(input)
       } catch (err) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
@@ -50,12 +51,11 @@ export const channelsRouter = router({
       z.object({
         id: z.string().uuid(),
         enabled: z.boolean().optional(),
-        chatId: z.string().nullish(),
       }),
     )
     .mutation(({ input }) => {
       const { id, ...patch } = input
-      const updated = updateChannel(id, patch)
+      const updated = updateConnection(id, patch)
       if (!updated) throw new TRPCError({ code: 'NOT_FOUND' })
       return updated
     }),
@@ -63,8 +63,22 @@ export const channelsRouter = router({
   delete: publicProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(({ input }) => {
-      const agentId = deleteChannel(input.id)
+      const agentId = deleteConnection(input.id)
       if (!agentId) throw new TRPCError({ code: 'NOT_FOUND' })
       return { id: input.id }
+    }),
+
+  // ── Chats (conversations under an agent's connections) ────────────────────
+
+  chats: publicProcedure
+    .input(z.object({ agentId: z.string().uuid() }))
+    .query(({ input }) => listAgentChats(input.agentId)),
+
+  updateChat: publicProcedure
+    .input(z.object({ id: z.string().uuid(), status: z.enum(['active', 'blocked']) }))
+    .mutation(({ input }) => {
+      const updated = setChatStatus(input.id, input.status)
+      if (!updated) throw new TRPCError({ code: 'NOT_FOUND' })
+      return updated
     }),
 })

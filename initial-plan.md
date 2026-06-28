@@ -13,7 +13,7 @@ The repo is currently empty; this is a greenfield v0 build.
 - **TanStack Start** — full-stack React on Node; server functions (= daemon HTTP API) + GUI in one codebase
 - **shadcn/ui (Base UI variant)** — UI primitives
 - **Node.js ≥20** — runtime; required for spawning Claude Code child processes
-- **better-sqlite3 + drizzle ORM** — embedded persistence (agents, channels, runs, encrypted secrets)
+- **better-sqlite3 + drizzle ORM** — embedded persistence (agents, connections, runs, encrypted secrets)
 - **node-pty** — spawn Claude Code attached to a pseudo-terminal so the GUI can render its TUI
 - **xterm.js** — embed the pty output in the browser
 - **node-cron** — scheduled agent runs
@@ -30,7 +30,7 @@ MCP is intentionally out of scope per user direction.
 │  ├── HTTP API on 127.0.0.1:5555 (server functions)          │
 │  ├── Web GUI (React SPA) served at same port                │
 │  ├── SQLite at ~/.projecthelm/db.sqlite                     │
-│  ├── Telegram polling loop (one per channel)                │
+│  ├── Telegram polling loop (one per connection)            │
 │  ├── Cron scheduler                                         │
 │  └── Agent process manager                                  │
 │      ├── operator-agent (always-on, wrapped Claude Code)    │
@@ -59,7 +59,7 @@ Daemon is the single source of truth. CLI, GUI, webhook traffic all funnel throu
 A wrapped Claude Code instance scaffolded at `~/.projecthelm/operator/` on first daemon start. It is:
 
 - Steered by a curated `CLAUDE.md` describing projectHelm and the operator's role
-- Equipped with `.claude/commands/` slash commands like `/agent-new`, `/agent-list`, `/channel-add`, `/agent-logs`. Each shells out to the local `helm` CLI, which calls the daemon HTTP API.
+- Equipped with `.claude/commands/` slash commands like `/agent-new`, `/agent-list`, `/connection-add`, `/agent-logs`. Each shells out to the local `helm` CLI, which calls the daemon HTTP API.
 - Always running as a managed child of the daemon, attached to a pty
 - Exposed in the GUI as the primary surface — an embedded panel attached to the operator's pty
 
@@ -77,11 +77,11 @@ Implication: the operator agent IS the backend for the GUI. The daemon's HTTP AP
 4. **Custom tooling** — user can drop scripts in `agents/<name>/tools/` and reference them from slash commands or CLAUDE.md.
 5. **Messaging app interfacing** — Telegram (see below).
 
-## Telegram channel integration (v0)
+## Telegram connection integration (v0)
 
 - User creates a bot via BotFather, pastes token into the GUI
 - Daemon stores the token encrypted in SQLite
-- Daemon spawns a long-poll loop (`getUpdates`) per channel — chosen over webhooks because local v0 has no public URL; webhooks land naturally in M4 with helmship
+- Daemon spawns a long-poll loop (`getUpdates`) per connection — chosen over webhooks because local v0 has no public URL; webhooks land naturally in M4 with helmship
 - Inbound message → daemon enqueues a run on the routed agent → agent processes → daemon posts reply via `sendMessage`
 - Routing is 1:1 (one bot → one agent) in v0
 - Background cron agents work via the same pipeline: cron triggers a run, agent can `sendMessage` as one of its tools
@@ -99,7 +99,7 @@ Implication: the operator agent IS the backend for the GUI. The daemon's HTTP AP
     .claude/commands/
     workspace/
   agents/<name>/
-    meta.json            mode, channels, schedule, allowed-tools
+    meta.json            mode, connections, schedule, allowed-tools
     CLAUDE.md
     .claude/commands/
     tools/
@@ -118,8 +118,8 @@ Implication: the operator agent IS the backend for the GUI. The daemon's HTTP AP
 - `helm agent rm <name>`
 - `helm agent run <name>` — one-shot run
 - `helm agent logs <name> [-f]`
-- `helm channel add telegram --agent <name>`
-- `helm channel ls`
+- `helm connection add telegram --agent <name>`
+- `helm connection ls`
 - `helm uninstall`
 
 `helm ship` is reserved; not implemented in v0.
@@ -138,7 +138,7 @@ Detected dependencies on first start:
 
 ## Work breakdown (v0 milestones)
 
-**v0.1 — Skeleton.** TanStack Start project + shadcn setup + basic layout. `helm` CLI with `start`/`stop`/`status` talking to the daemon HTTP. SQLite + drizzle, schema for `agents` / `channels` / `runs`. Daemon lifecycle (PID file + supervisor).
+**v0.1 — Skeleton.** TanStack Start project + shadcn setup + basic layout. `helm` CLI with `start`/`stop`/`status` talking to the daemon HTTP. SQLite + drizzle, schema for `agents` / `connections` / `runs`. Daemon lifecycle (PID file + supervisor).
 
 **v0.2 — Local-mode agents.** Spawn Claude Code via node-pty. `LocalProcessRunner` with workspace dir + env scoping. Agent CRUD via CLI and GUI. Embedded xterm.js terminal in GUI streaming pty output.
 
@@ -146,7 +146,7 @@ Detected dependencies on first start:
 
 **v0.4 — Container-mode agents.** Dockerfile template generator. `ContainerRunner` (build image, run with workspace mount, stream logs). Runtime detection (Docker → Podman → Colima → unavailable). Mode selectable per-agent in GUI.
 
-**v0.5 — Telegram channel.** Bot token entry + encrypted storage. Polling loop. Inbound message → agent run → reply pipeline. Channel↔agent routing in GUI.
+**v0.5 — Telegram connection.** Bot token entry + encrypted storage. Polling loop. Inbound message → agent run → reply pipeline. Connection↔agent routing in GUI.
 
 **v0.6 — Polish + install path.** `npm install -g` end-to-end. `curl | sh` wrapper. Clean uninstall. First-run wizard. README + smoke-test script.
 

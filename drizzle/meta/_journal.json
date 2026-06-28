@@ -29,6 +29,13 @@
       "when": 1781096000000,
       "tag": "0003_tool_library",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1781096100000,
+      "tag": "0004_connections_and_sessions",
+      "breakpoints": true
     }
   ]
 }

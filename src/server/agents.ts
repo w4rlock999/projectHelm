@@ -29,6 +29,8 @@ export function createAgent(input: CreateAgentInput): Agent {
     allowedTools: input.allowedTools?.length ? input.allowedTools.join(',') : null,
     model: input.model ?? null,
     claudeSessionId: null,
+    // New agents default to isolated per-chat sessions.
+    sessionScope: 'chat' as const,
     isOperator: false,
     createdAt: new Date(),
   }
@@ -55,6 +57,11 @@ export function updateAgentSystemPrompt(id: string, systemPrompt: string): void 
 
 export function updateAgentSessionId(id: string, sessionId: string): void {
   db.update(agents).set({ claudeSessionId: sessionId }).where(eq(agents.id, id)).run()
+}
+
+/** 'chat' = isolated per Telegram chat; 'agent' = one shared session for everything. */
+export function updateAgentSessionScope(id: string, sessionScope: 'chat' | 'agent'): void {
+  db.update(agents).set({ sessionScope }).where(eq(agents.id, id)).run()
 }
 
 export function resetAgentSession(id: string): void {

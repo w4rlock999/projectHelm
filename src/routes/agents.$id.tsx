@@ -3,13 +3,13 @@ import { useState } from 'react'
 import { Button } from '#/components/ui/button'
 import { ChatView } from '#/components/chat/ChatView'
 import { ToolsPanel } from '#/components/agent/ToolsPanel'
-import { ChannelsPanel } from '#/components/agent/ChannelsPanel'
+import { ConnectionsPanel } from '#/components/agent/ConnectionsPanel'
 import { HeartbeatsPanel } from '#/components/agent/HeartbeatsPanel'
 import { trpc } from '#/lib/trpc'
 
 export const Route = createFileRoute('/agents/$id')({ component: AgentPage })
 
-const TABS = ['Chat', 'Tools', 'Interfaces', 'Heartbeats'] as const
+const TABS = ['Chat', 'Tools', 'Connections', 'Heartbeats'] as const
 type Tab = (typeof TABS)[number]
 
 function AgentPage() {
@@ -110,7 +110,7 @@ function AgentPage() {
         <ChatView agent={agent} onSessionAppeared={() => utils.agents.get.invalidate({ id })} />
       )}
       {tab === 'Tools' && <ToolsPanel agentId={agent.id} />}
-      {tab === 'Interfaces' && <ChannelsPanel agentId={agent.id} />}
+      {tab === 'Connections' && <ConnectionsPanel agentId={agent.id} />}
       {tab === 'Heartbeats' && <HeartbeatsPanel agentId={agent.id} />}
     </div>
   )

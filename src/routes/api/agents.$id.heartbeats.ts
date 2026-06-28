@@ -24,7 +24,13 @@ export const Route = createFileRoute('/api/agents/$id/heartbeats')({
         if (!loadAgent(params.id)) {
           return Response.json({ error: 'agent not found' }, { status: 404 })
         }
-        let body: { cron?: string; prompt?: string; name?: string }
+        let body: {
+          cron?: string
+          prompt?: string
+          name?: string
+          targetType?: string
+          targetChatId?: string
+        }
         try {
           body = (await request.json()) as typeof body
         } catch {
@@ -39,6 +45,8 @@ export const Route = createFileRoute('/api/agents/$id/heartbeats')({
             cron: body.cron,
             prompt: body.prompt,
             name: body.name,
+            targetType: body.targetType,
+            targetChatId: body.targetChatId,
           })
           return Response.json(hb, { status: 201 })
         } catch (err) {
