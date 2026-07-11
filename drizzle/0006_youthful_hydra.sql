@@ -1,0 +1,1 @@
+ALTER TABLE `agents` ADD `session_recall` text DEFAULT 'none' NOT NULL;

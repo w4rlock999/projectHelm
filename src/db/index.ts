@@ -10,8 +10,8 @@ mkdirSync(dirname(paths.dbFile), { recursive: true })
 
 const sqlite = new Database(paths.dbFile)
 sqlite.pragma('journal_mode = WAL')
-// Enforce onDelete:'cascade' — deleting an agent removes its tools/connections/
-// heartbeats (and a connection's chats) so the scheduler/pollers never operate
+// Enforce onDelete:'cascade' — deleting an agent removes its tools/gateways/
+// heartbeats (and a gateway's chats) so the scheduler/pollers never operate
 // on orphans.
 sqlite.pragma('foreign_keys = ON')
 

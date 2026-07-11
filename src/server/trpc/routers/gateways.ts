@@ -1,20 +1,20 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import {
-  createConnection,
-  deleteConnection,
+  createGateway,
+  deleteGateway,
   listAgentChats,
-  listConnections,
+  listGateways,
   setChatStatus,
-  updateConnection,
-} from '../../runtime/connections.ts'
-import { getMe } from '../../connections/telegram.ts'
+  updateGateway,
+} from '../../runtime/gateways.ts'
+import { getMe } from '../../gateways/telegram.ts'
 import { publicProcedure, router } from '../init.ts'
 
-export const connectionsRouter = router({
+export const gatewaysRouter = router({
   list: publicProcedure
     .input(z.object({ agentId: z.string().uuid() }))
-    .query(({ input }) => listConnections(input.agentId)),
+    .query(({ input }) => listGateways(input.agentId)),
 
   // Validate a token without persisting — powers the wizard's "Verify" step.
   verifyToken: publicProcedure
@@ -37,7 +37,7 @@ export const connectionsRouter = router({
     )
     .mutation(async ({ input }) => {
       try {
-        return await createConnection(input)
+        return await createGateway(input)
       } catch (err) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
@@ -55,7 +55,7 @@ export const connectionsRouter = router({
     )
     .mutation(({ input }) => {
       const { id, ...patch } = input
-      const updated = updateConnection(id, patch)
+      const updated = updateGateway(id, patch)
       if (!updated) throw new TRPCError({ code: 'NOT_FOUND' })
       return updated
     }),
@@ -63,12 +63,12 @@ export const connectionsRouter = router({
   delete: publicProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(({ input }) => {
-      const agentId = deleteConnection(input.id)
+      const agentId = deleteGateway(input.id)
       if (!agentId) throw new TRPCError({ code: 'NOT_FOUND' })
       return { id: input.id }
     }),
 
-  // ── Chats (conversations under an agent's connections) ────────────────────
+  // ── Chats (conversations under an agent's gateways) ────────────────────
 
   chats: publicProcedure
     .input(z.object({ agentId: z.string().uuid() }))

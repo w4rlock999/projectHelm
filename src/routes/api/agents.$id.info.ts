@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { deleteAgent, loadAgent, updateAgentSystemPrompt } from '../../server/agents.ts'
 import { listAgentTools } from '../../server/tools.ts'
-import { listAgentChats, listConnections } from '../../server/runtime/connections.ts'
+import { listAgentChats, listGateways } from '../../server/runtime/gateways.ts'
 import { listHeartbeats } from '../../server/runtime/heartbeats.ts'
 import type { ApiHandlerCtx, RouteParams } from '../../server/api-route.ts'
 
@@ -25,6 +25,7 @@ export const Route = createFileRoute('/api/agents/$id/info')({
           isOperator: a.isOperator,
           hasSession: !!a.claudeSessionId,
           sessionScope: a.sessionScope,
+          sessionRecall: a.sessionRecall,
           systemPrompt: a.systemPrompt,
           tools: listAgentTools(a.id).map((t) => ({
             id: t.id,
@@ -33,14 +34,14 @@ export const Route = createFileRoute('/api/agents/$id/info')({
             description: t.description,
           })),
           // Tokens are secret — never expose them over the read API.
-          connections: listConnections(a.id).map((c) => ({
-            id: c.id,
-            type: c.type,
-            enabled: c.enabled,
+          gateways: listGateways(a.id).map((g) => ({
+            id: g.id,
+            type: g.type,
+            enabled: g.enabled,
           })),
           chats: listAgentChats(a.id).map((c) => ({
             id: c.id,
-            connectionId: c.connectionId,
+            gatewayId: c.gatewayId,
             chatId: c.chatId,
             title: c.title,
             status: c.status,

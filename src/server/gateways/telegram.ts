@@ -1,6 +1,6 @@
 /**
  * Thin Telegram Bot API client over `fetch` — no SDK. Covers just what the v0
- * connection needs: validate a token, long-poll for updates, send a message.
+ * gateway needs: validate a token, long-poll for updates, send a message.
  *
  * Docs: https://core.telegram.org/bots/api
  */

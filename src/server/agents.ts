@@ -21,6 +21,13 @@ export function createAgent(input: CreateAgentInput): Agent {
   const logsDir = paths.agentLogsDir(id)
   mkdirSync(workspaceDir, { recursive: true })
   mkdirSync(logsDir, { recursive: true })
+  // Durable data plane: the agent store (shared) and the 'shared' session store
+  // (used by the agent-scope session, console, and 'main' heartbeats). Per-chat
+  // session stores are created lazily on first turn. ('shared' mirrors
+  // SHARED_SESSION_KEY in runtime/gateways.ts — kept literal here to avoid a
+  // circular import.)
+  mkdirSync(paths.agentStoreArtifactsDir(id), { recursive: true })
+  mkdirSync(paths.agentSessionStoreArtifactsDir(id, 'shared'), { recursive: true })
 
   const row = {
     id,
@@ -29,8 +36,10 @@ export function createAgent(input: CreateAgentInput): Agent {
     allowedTools: input.allowedTools?.length ? input.allowedTools.join(',') : null,
     model: input.model ?? null,
     claudeSessionId: null,
-    // New agents default to isolated per-chat sessions.
+    // New agents default to isolated per-chat sessions...
     sessionScope: 'chat' as const,
+    // ...and to no cross-session recall (each session is context-isolated).
+    sessionRecall: 'none' as const,
     isOperator: false,
     createdAt: new Date(),
   }
@@ -62,6 +71,16 @@ export function updateAgentSessionId(id: string, sessionId: string): void {
 /** 'chat' = isolated per Telegram chat; 'agent' = one shared session for everything. */
 export function updateAgentSessionScope(id: string, sessionScope: 'chat' | 'agent'): void {
   db.update(agents).set({ sessionScope }).where(eq(agents.id, id)).run()
+}
+
+/**
+ * 'none' = the agent only sees the current session's store; 'all' = it may read
+ * across every session store (exposed as HELM_SESSIONS_DIR). Re-renders CLAUDE.md
+ * so the "Your data" block reflects the new recall permission.
+ */
+export function updateAgentSessionRecall(id: string, sessionRecall: 'none' | 'all'): void {
+  db.update(agents).set({ sessionRecall }).where(eq(agents.id, id)).run()
+  syncAgentTools(id)
 }
 
 export function resetAgentSession(id: string): void {

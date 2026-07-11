@@ -9,12 +9,18 @@ export const agents = sqliteTable('agents', {
   model: text('model'),
   // The session resumed when a turn's scope resolves to the agent: the browser
   // console, `target='main'` heartbeats, and *every* turn when sessionScope is
-  // 'agent'. Per-chat sessions (sessionScope='chat') live on connectionsChat.
+  // 'agent'. Per-chat sessions (sessionScope='chat') live on gatewaysChat.
   claudeSessionId: text('claude_session_id'),
   // 'chat' = each Telegram chat is its own isolated session; 'agent' = one
   // shared session across all chats + browser + heartbeats. New agents default
   // to 'chat' (isolated); the migration flips pre-existing agents to 'agent'.
   sessionScope: text('session_scope').notNull().default('chat'),
+  // Cross-session recall authz — a single coarse knob (no per-principal ACL).
+  // 'none' = the agent only ever sees the current session's store; 'all' = it
+  // may read across *every* one of its session stores (exposed as
+  // HELM_SESSIONS_DIR). Under 'none' the agent loses context between sessions.
+  // New agents default to 'none' (isolated).
+  sessionRecall: text('session_recall').notNull().default('none'),
   // helmCaptain — the operator agent that manages the fleet. Exactly one row
   // has this set; it's hidden from the normal fleet list and gets its own
   // chat surface. Everything else (runner, sessions, logs) is shared.
@@ -63,11 +69,11 @@ export const agentTools = sqliteTable(
   (t) => [primaryKey({ columns: [t.agentId, t.toolId] })],
 )
 
-// A connection is the agent's credentialed binding to a messaging platform
+// A gateway is the agent's credentialed binding to a messaging platform
 // (v0: Telegram only) — its outbound voice (the `send-telegram` tool) and
 // inbound ear (a getUpdates long-poll loop feeds messages back as agent runs).
-// Individual conversations under a connection are rows in `connections_chat`.
-export const connections = sqliteTable('connections', {
+// Individual conversations under a gateway are rows in `gateways_chat`.
+export const gateways = sqliteTable('gateways', {
   id: text('id').primaryKey(),
   agentId: text('agent_id')
     .notNull()
@@ -83,16 +89,16 @@ export const connections = sqliteTable('connections', {
     .default(sql`(unixepoch())`),
 })
 
-// One conversation under a connection, keyed by Telegram chat.id — the
+// One conversation under a gateway, keyed by Telegram chat.id — the
 // principal. Holds the per-chat Claude session (when the agent's sessionScope
 // is 'chat'), a status gate, and a human-readable title for the UI.
-export const connectionsChat = sqliteTable(
-  'connections_chat',
+export const gatewaysChat = sqliteTable(
+  'gateways_chat',
   {
     id: text('id').primaryKey(),
-    connectionId: text('connection_id')
+    gatewayId: text('gateway_id')
       .notNull()
-      .references(() => connections.id, { onDelete: 'cascade' }),
+      .references(() => gateways.id, { onDelete: 'cascade' }),
     // Telegram chat.id. For DMs this equals the user's id; for groups it's the
     // room. The unit of session isolation and the outbound reply target.
     chatId: text('chat_id').notNull(),
@@ -107,7 +113,7 @@ export const connectionsChat = sqliteTable(
       .default(sql`(unixepoch())`),
     lastMessageAt: integer('last_message_at', { mode: 'timestamp' }),
   },
-  (t) => [uniqueIndex('conn_chat_uq').on(t.connectionId, t.chatId)],
+  (t) => [uniqueIndex('gateway_chat_uq').on(t.gatewayId, t.chatId)],
 )
 
 // Cron-scheduled prompts fired into the agent by the wrapper. The agent can
@@ -139,6 +145,6 @@ export type Agent = typeof agents.$inferSelect
 export type NewAgent = typeof agents.$inferInsert
 export type Tool = typeof tools.$inferSelect
 export type AgentTool = typeof agentTools.$inferSelect
-export type Connection = typeof connections.$inferSelect
-export type ConnectionChat = typeof connectionsChat.$inferSelect
+export type Gateway = typeof gateways.$inferSelect
+export type GatewayChat = typeof gatewaysChat.$inferSelect
 export type Heartbeat = typeof heartbeats.$inferSelect

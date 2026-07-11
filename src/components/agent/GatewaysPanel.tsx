@@ -12,10 +12,10 @@ import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { trpc } from '#/lib/trpc'
 
-export function ConnectionsPanel({ agentId }: { agentId: string }) {
+export function GatewaysPanel({ agentId }: { agentId: string }) {
   const utils = trpc.useUtils()
-  const { data: connections } = trpc.connections.list.useQuery({ agentId })
-  const { data: chats } = trpc.connections.chats.useQuery({ agentId })
+  const { data: gateways } = trpc.gateways.list.useQuery({ agentId })
+  const { data: chats } = trpc.gateways.chats.useQuery({ agentId })
   const { data: agent } = trpc.agents.get.useQuery({ id: agentId })
   const [wizardOpen, setWizardOpen] = useState(false)
 
@@ -23,25 +23,26 @@ export function ConnectionsPanel({ agentId }: { agentId: string }) {
     onSuccess: () => utils.agents.get.invalidate({ id: agentId }),
   })
   const scope = agent?.sessionScope ?? 'chat'
+  const recall = agent?.sessionRecall ?? 'none'
 
-  const updateMutation = trpc.connections.update.useMutation({
-    onSuccess: () => utils.connections.list.invalidate({ agentId }),
+  const updateMutation = trpc.gateways.update.useMutation({
+    onSuccess: () => utils.gateways.list.invalidate({ agentId }),
   })
-  const deleteMutation = trpc.connections.delete.useMutation({
+  const deleteMutation = trpc.gateways.delete.useMutation({
     onSuccess: () => {
-      utils.connections.list.invalidate({ agentId })
-      utils.connections.chats.invalidate({ agentId })
+      utils.gateways.list.invalidate({ agentId })
+      utils.gateways.chats.invalidate({ agentId })
     },
   })
-  const updateChatMutation = trpc.connections.updateChat.useMutation({
-    onSuccess: () => utils.connections.chats.invalidate({ agentId }),
+  const updateChatMutation = trpc.gateways.updateChat.useMutation({
+    onSuccess: () => utils.gateways.chats.invalidate({ agentId }),
   })
 
   return (
     <section className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-medium">Connections</h2>
+          <h2 className="text-lg font-medium">Gateways</h2>
           <p className="text-sm text-muted-foreground">
             Connect a Telegram bot. This becomes the agent's voice — it gets a{' '}
             <code className="text-xs">send-telegram</code> tool and receives inbound messages as
@@ -79,21 +80,50 @@ export function ConnectionsPanel({ agentId }: { agentId: string }) {
         </div>
       </div>
 
-      {!connections || connections.length === 0 ? (
+      {/* Cross-session recall: can the agent read across all its sessions? */}
+      <div className="rounded-md border px-4 py-3">
+        <p className="text-sm font-medium">Cross-session recall</p>
+        <p className="text-sm text-muted-foreground">
+          {recall === 'all'
+            ? 'The agent can search across every session — it remembers people and topics from other conversations.'
+            : "The agent only sees the current conversation. It can't recall other sessions."}
+          {scope === 'agent' ? ' (No effect while memory is Shared — there is only one session.)' : ''}
+        </p>
+        <div className="mt-2 flex gap-2">
+          <Button
+            variant={recall === 'none' ? 'default' : 'outline'}
+            size="sm"
+            disabled={scopeMutation.isPending || recall === 'none'}
+            onClick={() => scopeMutation.mutate({ id: agentId, sessionRecall: 'none' })}
+          >
+            Isolated
+          </Button>
+          <Button
+            variant={recall === 'all' ? 'default' : 'outline'}
+            size="sm"
+            disabled={scopeMutation.isPending || recall === 'all'}
+            onClick={() => scopeMutation.mutate({ id: agentId, sessionRecall: 'all' })}
+          >
+            Search all sessions
+          </Button>
+        </div>
+      </div>
+
+      {!gateways || gateways.length === 0 ? (
         <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-          No connection yet.
+          No gateway yet.
         </p>
       ) : (
         <ul className="space-y-2">
-          {connections.map((c) => {
-            const connChats = (chats ?? []).filter((ch) => ch.connectionId === c.id)
+          {gateways.map((g) => {
+            const gwChats = (chats ?? []).filter((ch) => ch.gatewayId === g.id)
             return (
-              <li key={c.id} className="rounded-md border px-4 py-3">
+              <li key={g.id} className="rounded-md border px-4 py-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-medium">Telegram</p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {c.enabled ? 'polling for messages' : 'disabled'}
+                      {g.enabled ? 'polling for messages' : 'disabled'}
                     </p>
                   </div>
                   <div className="flex shrink-0 gap-2">
@@ -101,16 +131,16 @@ export function ConnectionsPanel({ agentId }: { agentId: string }) {
                       variant="outline"
                       size="sm"
                       disabled={updateMutation.isPending}
-                      onClick={() => updateMutation.mutate({ id: c.id, enabled: !c.enabled })}
+                      onClick={() => updateMutation.mutate({ id: g.id, enabled: !g.enabled })}
                     >
-                      {c.enabled ? 'Disable' : 'Enable'}
+                      {g.enabled ? 'Disable' : 'Enable'}
                     </Button>
                     <Button
                       variant="ghost"
                       size="sm"
                       disabled={deleteMutation.isPending}
                       onClick={() => {
-                        if (confirm('Remove this Telegram connection?')) deleteMutation.mutate({ id: c.id })
+                        if (confirm('Remove this Telegram gateway?')) deleteMutation.mutate({ id: g.id })
                       }}
                     >
                       Remove
@@ -118,14 +148,14 @@ export function ConnectionsPanel({ agentId }: { agentId: string }) {
                   </div>
                 </div>
 
-                {/* Chats (conversations) under this connection. */}
-                {connChats.length === 0 ? (
+                {/* Chats (conversations) under this gateway. */}
+                {gwChats.length === 0 ? (
                   <p className="mt-3 text-sm text-muted-foreground">
                     No chats yet — message your bot to start a conversation.
                   </p>
                 ) : (
                   <ul className="mt-3 space-y-1.5 border-t pt-3">
-                    {connChats.map((ch) => (
+                    {gwChats.map((ch) => (
                       <li key={ch.id} className="flex items-center justify-between gap-3 text-sm">
                         <span className="min-w-0 truncate">
                           {ch.title ?? 'chat'}{' '}
@@ -167,15 +197,15 @@ function TelegramWizard({ agentId, onClose }: { agentId: string; onClose: () => 
   const [token, setToken] = useState('')
   const [verified, setVerified] = useState<{ username?: string; name: string } | null>(null)
 
-  const verifyMutation = trpc.connections.verifyToken.useMutation({
+  const verifyMutation = trpc.gateways.verifyToken.useMutation({
     onSuccess: (res) => {
       if (res.ok) setVerified({ username: res.username, name: res.name })
       else setVerified(null)
     },
   })
-  const createMutation = trpc.connections.create.useMutation({
+  const createMutation = trpc.gateways.create.useMutation({
     onSuccess: () => {
-      utils.connections.list.invalidate({ agentId })
+      utils.gateways.list.invalidate({ agentId })
       onClose()
     },
   })
