@@ -1,5 +1,5 @@
-import { reconcileGateways } from './gateways.ts'
-import { startHeartbeatScheduler } from './heartbeats.ts'
+import { reconcileGateways } from './gateways.ts';
+import { startHeartbeatScheduler } from './heartbeats.ts';
 
 /**
  * Boot the background daemon loops (heartbeat scheduler + Telegram pollers)
@@ -8,15 +8,15 @@ import { startHeartbeatScheduler } from './heartbeats.ts'
  * so the loops come up as soon as the server handles any request.
  */
 export function ensureRuntimeStarted(): void {
-  if ((globalThis as any).__helmRuntimeStarted) return
-  ;(globalThis as any).__helmRuntimeStarted = true
+  if ((globalThis as any).__helmRuntimeStarted) return;
+  (globalThis as any).__helmRuntimeStarted = true;
   try {
-    startHeartbeatScheduler()
-    reconcileGateways()
-    console.log('[helm] runtime started (heartbeat scheduler + gateway pollers)')
+    startHeartbeatScheduler();
+    reconcileGateways();
+    console.log('[helm] runtime started (heartbeat scheduler + gateway pollers)');
   } catch (err) {
     // Don't wedge request handling if boot hiccups; next request retries.
-    ;(globalThis as any).__helmRuntimeStarted = false
-    console.error('[helm] runtime start failed:', String(err))
+    (globalThis as any).__helmRuntimeStarted = false;
+    console.error('[helm] runtime start failed:', String(err));
   }
 }

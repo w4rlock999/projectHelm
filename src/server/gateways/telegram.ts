@@ -5,12 +5,12 @@
  * Docs: https://core.telegram.org/bots/api
  */
 
-const API = 'https://api.telegram.org'
+const API = 'https://api.telegram.org';
 
 interface TgResponse<T> {
-  ok: boolean
-  result?: T
-  description?: string
+  ok: boolean;
+  result?: T;
+  description?: string;
 }
 
 async function call<T>(
@@ -24,35 +24,35 @@ async function call<T>(
     headers: { 'content-type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
     signal,
-  })
-  const data = (await res.json()) as TgResponse<T>
+  });
+  const data = (await res.json()) as TgResponse<T>;
   if (!data.ok || data.result === undefined) {
-    throw new Error(data.description ?? `telegram ${method} failed (${res.status})`)
+    throw new Error(data.description ?? `telegram ${method} failed (${res.status})`);
   }
-  return data.result
+  return data.result;
 }
 
 export interface TelegramUser {
-  id: number
-  is_bot: boolean
-  first_name: string
-  username?: string
+  id: number;
+  is_bot: boolean;
+  first_name: string;
+  username?: string;
 }
 
 /** Validate a bot token; returns the bot's identity. */
 export function getMe(token: string): Promise<TelegramUser> {
-  return call<TelegramUser>(token, 'getMe')
+  return call<TelegramUser>(token, 'getMe');
 }
 
 export interface TelegramUpdate {
-  update_id: number
+  update_id: number;
   message?: {
-    message_id: number
-    from?: TelegramUser
-    chat: { id: number; type: string; title?: string; username?: string }
-    text?: string
-    date: number
-  }
+    message_id: number;
+    from?: TelegramUser;
+    chat: { id: number; type: string; title?: string; username?: string };
+    text?: string;
+    date: number;
+  };
 }
 
 /**
@@ -69,9 +69,13 @@ export function getUpdates(
     'getUpdates',
     { offset, timeout: opts.timeout ?? 30, allowed_updates: ['message'] },
     opts.signal,
-  )
+  );
 }
 
-export function sendMessage(token: string, chatId: string | number, text: string): Promise<unknown> {
-  return call(token, 'sendMessage', { chat_id: chatId, text })
+export function sendMessage(
+  token: string,
+  chatId: string | number,
+  text: string,
+): Promise<unknown> {
+  return call(token, 'sendMessage', { chat_id: chatId, text });
 }

@@ -1,35 +1,35 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
-import { useState } from 'react'
-import { Button } from '#/components/ui/button'
-import { ChatView } from '#/components/chat/ChatView'
-import { ToolsPanel } from '#/components/agent/ToolsPanel'
-import { GatewaysPanel } from '#/components/agent/GatewaysPanel'
-import { HeartbeatsPanel } from '#/components/agent/HeartbeatsPanel'
-import { trpc } from '#/lib/trpc'
+import { createFileRoute, Link } from '@tanstack/react-router';
+import { useState } from 'react';
+import { Button } from '#/components/ui/button';
+import { ChatView } from '#/components/chat/ChatView';
+import { ToolsPanel } from '#/components/agent/ToolsPanel';
+import { GatewaysPanel } from '#/components/agent/GatewaysPanel';
+import { HeartbeatsPanel } from '#/components/agent/HeartbeatsPanel';
+import { trpc } from '#/lib/trpc';
 
-export const Route = createFileRoute('/agents/$id')({ component: AgentPage })
+export const Route = createFileRoute('/agents/$id')({ component: AgentPage });
 
-const TABS = ['Chat', 'Tools', 'Gateways', 'Heartbeats'] as const
-type Tab = (typeof TABS)[number]
+const TABS = ['Chat', 'Tools', 'Gateways', 'Heartbeats'] as const;
+type Tab = (typeof TABS)[number];
 
 function AgentPage() {
-  const { id } = Route.useParams()
-  const [promptOpen, setPromptOpen] = useState(false)
-  const [tab, setTab] = useState<Tab>('Chat')
+  const { id } = Route.useParams();
+  const [promptOpen, setPromptOpen] = useState(false);
+  const [tab, setTab] = useState<Tab>('Chat');
 
-  const utils = trpc.useUtils()
-  const { data: agent, error } = trpc.agents.get.useQuery({ id })
+  const utils = trpc.useUtils();
+  const { data: agent, error } = trpc.agents.get.useQuery({ id });
   const resetMutation = trpc.agents.resetSession.useMutation({
     onSuccess: () => {
-      utils.agents.get.invalidate({ id })
-      utils.agents.list.invalidate()
+      utils.agents.get.invalidate({ id });
+      utils.agents.list.invalidate();
     },
-  })
+  });
 
   function onReset() {
-    if (!agent) return
-    if (!confirm(`Reset conversation? "${agent.name}" will forget the chat history.`)) return
-    resetMutation.mutate({ id: agent.id })
+    if (!agent) return;
+    if (!confirm(`Reset conversation? "${agent.name}" will forget the chat history.`)) return;
+    resetMutation.mutate({ id: agent.id });
   }
 
   if (error) {
@@ -38,12 +38,12 @@ function AgentPage() {
         <Button variant="ghost" asChild className="mb-4">
           <Link to="/">← Back</Link>
         </Button>
-        <p className="text-sm text-destructive">{error.message}</p>
+        <p className="text-destructive text-sm">{error.message}</p>
       </div>
-    )
+    );
   }
   if (!agent) {
-    return <p className="p-8 text-sm text-muted-foreground">Loading…</p>
+    return <p className="text-muted-foreground p-8 text-sm">Loading…</p>;
   }
 
   return (
@@ -52,17 +52,17 @@ function AgentPage() {
         <Link to="/">← Back</Link>
       </Button>
 
-      <header className="flex items-start justify-between mb-4 gap-4">
+      <header className="mb-4 flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="text-2xl font-bold truncate">{agent.name}</h1>
-          <p className="text-xs text-muted-foreground mt-1">
+          <h1 className="truncate text-2xl font-bold">{agent.name}</h1>
+          <p className="text-muted-foreground mt-1 text-xs">
             model: {agent.model ?? 'sonnet'}
             {agent.claudeSessionId
               ? ` · session ${agent.claudeSessionId.slice(0, 8)}…`
               : ' · no session yet'}
           </p>
         </div>
-        <div className="flex gap-2 shrink-0">
+        <div className="flex shrink-0 gap-2">
           <Button
             variant="outline"
             size="sm"
@@ -83,9 +83,11 @@ function AgentPage() {
       </header>
 
       {promptOpen ? (
-        <section className="mb-4 rounded-md border bg-muted/30 px-4 py-3">
-          <p className="text-xs font-medium text-muted-foreground mb-1">System prompt (CLAUDE.md)</p>
-          <pre className="text-xs whitespace-pre-wrap leading-relaxed">{agent.systemPrompt}</pre>
+        <section className="bg-muted/30 mb-4 rounded-md border px-4 py-3">
+          <p className="text-muted-foreground mb-1 text-xs font-medium">
+            System prompt (CLAUDE.md)
+          </p>
+          <pre className="text-xs leading-relaxed whitespace-pre-wrap">{agent.systemPrompt}</pre>
         </section>
       ) : null}
 
@@ -95,10 +97,10 @@ function AgentPage() {
             key={t}
             onClick={() => setTab(t)}
             className={
-              'px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ' +
+              '-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors ' +
               (tab === t
                 ? 'border-primary text-foreground'
-                : 'border-transparent text-muted-foreground hover:text-foreground')
+                : 'text-muted-foreground hover:text-foreground border-transparent')
             }
           >
             {t}
@@ -113,5 +115,5 @@ function AgentPage() {
       {tab === 'Gateways' && <GatewaysPanel agentId={agent.id} />}
       {tab === 'Heartbeats' && <HeartbeatsPanel agentId={agent.id} />}
     </div>
-  )
+  );
 }

@@ -1,19 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Button } from '#/components/ui/button'
-import { Textarea } from '#/components/ui/textarea'
-import { cn } from '#/lib/utils'
-import { postSSE } from '#/lib/sse'
-import type { ClaudeEvent } from '#/server/adapter/types'
-import type { Agent } from '#/lib/trpc'
-import { MessageBubble, type AssistantSegment, type ChatMessage } from './MessageBubble'
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Button } from '#/components/ui/button';
+import { Textarea } from '#/components/ui/textarea';
+import { cn } from '#/lib/utils';
+import { postSSE } from '#/lib/sse';
+import type { ClaudeEvent } from '#/server/adapter/types';
+import type { Agent } from '#/lib/trpc';
+import { MessageBubble, type AssistantSegment, type ChatMessage } from './MessageBubble';
 
 interface Props {
-  agent: Agent
-  onSessionAppeared?: () => void
+  agent: Agent;
+  onSessionAppeared?: () => void;
   /** Tailwind height class for the whole chat column. */
-  heightClassName?: string
+  heightClassName?: string;
   /** `glass` themes the surface for the warm matte-glass home page. */
-  variant?: 'default' | 'glass'
+  variant?: 'default' | 'glass';
 }
 
 export function ChatView({
@@ -22,44 +22,44 @@ export function ChatView({
   heightClassName = 'h-[calc(100vh-12rem)]',
   variant = 'default',
 }: Props) {
-  const isGlass = variant === 'glass'
-  const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [composer, setComposer] = useState('')
-  const [streaming, setStreaming] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const abortRef = useRef<AbortController | null>(null)
-  const scrollEndRef = useRef<HTMLDivElement | null>(null)
+  const isGlass = variant === 'glass';
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [composer, setComposer] = useState('');
+  const [streaming, setStreaming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const scrollEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    scrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [messages])
+    scrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [messages]);
 
   useEffect(
     () => () => {
-      abortRef.current?.abort()
+      abortRef.current?.abort();
     },
     [],
-  )
+  );
 
   const send = useCallback(async () => {
-    const text = composer.trim()
-    if (!text || streaming) return
-    setComposer('')
-    setError(null)
+    const text = composer.trim();
+    if (!text || streaming) return;
+    setComposer('');
+    setError(null);
 
-    const userMsg: ChatMessage = { id: crypto.randomUUID(), role: 'user', text }
+    const userMsg: ChatMessage = { id: crypto.randomUUID(), role: 'user', text };
     const assistantMsg: ChatMessage = {
       id: crypto.randomUUID(),
       role: 'assistant',
       segments: [],
       complete: false,
-    }
-    setMessages((m) => [...m, userMsg, assistantMsg])
-    setStreaming(true)
+    };
+    setMessages((m) => [...m, userMsg, assistantMsg]);
+    setStreaming(true);
 
-    const controller = new AbortController()
-    abortRef.current = controller
-    let sessionWasNull = !agent.claudeSessionId
+    const controller = new AbortController();
+    abortRef.current = controller;
+    let sessionWasNull = !agent.claudeSessionId;
 
     try {
       await postSSE({
@@ -69,20 +69,20 @@ export function ChatView({
         onEvent: (name, raw) => {
           if (name !== 'claude') {
             if (name === 'error') {
-              setError(safeParse(raw)?.message ?? raw)
+              setError(safeParse(raw)?.message ?? raw);
             }
-            return
+            return;
           }
-          let evt: ClaudeEvent
+          let evt: ClaudeEvent;
           try {
-            evt = JSON.parse(raw) as ClaudeEvent
+            evt = JSON.parse(raw) as ClaudeEvent;
           } catch {
-            return
+            return;
           }
-          handleClaudeEvent(evt, assistantMsg.id, setMessages)
+          handleClaudeEvent(evt, assistantMsg.id, setMessages);
           if (sessionWasNull && evt.type === 'system' && evt.subtype === 'init') {
-            sessionWasNull = false
-            onSessionAppeared?.()
+            sessionWasNull = false;
+            onSessionAppeared?.();
           }
           if (evt.type === 'result') {
             setMessages((m) =>
@@ -91,52 +91,50 @@ export function ChatView({
                   ? { ...mm, complete: true, cost: evt.total_cost_usd, durationMs: evt.duration_ms }
                   : mm,
               ),
-            )
+            );
           }
         },
-      })
+      });
     } catch (err) {
       if (controller.signal.aborted) {
         // user-cancelled; mark partial assistant message as complete
         setMessages((m) =>
           m.map((mm) =>
-            mm.id === assistantMsg.id && mm.role === 'assistant'
-              ? { ...mm, complete: true }
-              : mm,
+            mm.id === assistantMsg.id && mm.role === 'assistant' ? { ...mm, complete: true } : mm,
           ),
-        )
+        );
       } else {
-        setError(err instanceof Error ? err.message : String(err))
+        setError(err instanceof Error ? err.message : String(err));
       }
     } finally {
-      setStreaming(false)
-      abortRef.current = null
+      setStreaming(false);
+      abortRef.current = null;
     }
-  }, [agent.id, agent.claudeSessionId, composer, streaming, onSessionAppeared])
+  }, [agent.id, agent.claudeSessionId, composer, streaming, onSessionAppeared]);
 
   function cancel() {
-    abortRef.current?.abort()
+    abortRef.current?.abort();
   }
 
   function onKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      send()
+      e.preventDefault();
+      send();
     }
   }
 
   const glassButton =
-    'border border-white/20 bg-white/10 text-[var(--warm-ink)] shadow-none hover:bg-white/20'
+    'border border-white/20 bg-white/10 text-[var(--warm-ink)] shadow-none hover:bg-white/20';
 
   return (
     <div className={cn('flex flex-col', heightClassName)}>
       <div
         className={cn(
           'flex-1 overflow-y-auto border',
-          isGlass ? 'rounded-2xl border-white/10 bg-black/15' : 'rounded-lg bg-background/30',
+          isGlass ? 'rounded-2xl border-white/10 bg-black/15' : 'bg-background/30 rounded-lg',
         )}
       >
-        <div className="p-4 space-y-4">
+        <div className="space-y-4 p-4">
           {messages.length === 0 ? (
             <div
               className={cn(
@@ -157,16 +155,18 @@ export function ChatView({
       </div>
 
       {error ? (
-        <p className={cn('text-sm mt-2', isGlass ? 'text-red-200' : 'text-destructive')}>{error}</p>
+        <p className={cn('mt-2 text-sm', isGlass ? 'text-red-200' : 'text-destructive')}>{error}</p>
       ) : null}
 
-      <div className="mt-3 flex gap-2 items-end">
+      <div className="mt-3 flex items-end gap-2">
         <Textarea
           value={composer}
           onChange={(e) => setComposer(e.target.value)}
           onKeyDown={onKey}
           placeholder={
-            streaming ? 'Streaming response…' : 'Type a message — Enter to send, Shift+Enter for newline.'
+            streaming
+              ? 'Streaming response…'
+              : 'Type a message — Enter to send, Shift+Enter for newline.'
           }
           rows={2}
           disabled={streaming}
@@ -181,24 +181,20 @@ export function ChatView({
             Stop
           </Button>
         ) : (
-          <Button
-            onClick={send}
-            disabled={!composer.trim()}
-            className={cn(isGlass && glassButton)}
-          >
+          <Button onClick={send} disabled={!composer.trim()} className={cn(isGlass && glassButton)}>
             Send
           </Button>
         )}
       </div>
     </div>
-  )
+  );
 }
 
 function safeParse(s: string): { message?: string } | null {
   try {
-    return JSON.parse(s)
+    return JSON.parse(s);
   } catch {
-    return null
+    return null;
   }
 }
 
@@ -206,10 +202,10 @@ function safeParse(s: string): { message?: string } | null {
 // any missing earlier slots with explicit `undefined` so the array is
 // never sparse. Sparse arrays break .map() consumers downstream.
 function withAt<T>(arr: (T | undefined)[], idx: number, value: T): (T | undefined)[] {
-  const out: (T | undefined)[] = arr.slice()
-  while (out.length <= idx) out.push(undefined)
-  out[idx] = value
-  return out
+  const out: (T | undefined)[] = arr.slice();
+  while (out.length <= idx) out.push(undefined);
+  out[idx] = value;
+  return out;
 }
 
 function handleClaudeEvent(
@@ -217,16 +213,16 @@ function handleClaudeEvent(
   assistantMsgId: string,
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
 ) {
-  if (evt.type !== 'stream_event') return
-  const ev = evt.event
+  if (evt.type !== 'stream_event') return;
+  const ev = evt.event;
   if (ev.type === 'content_block_start') {
-    const block = ev.content_block
+    const block = ev.content_block;
     setMessages((m) =>
       m.map((mm) => {
-        if (mm.id !== assistantMsgId || mm.role !== 'assistant') return mm
-        let next: AssistantSegment | undefined
+        if (mm.id !== assistantMsgId || mm.role !== 'assistant') return mm;
+        let next: AssistantSegment | undefined;
         if (block.type === 'text') {
-          next = { type: 'text', text: '' }
+          next = { type: 'text', text: '' };
         } else if (block.type === 'tool_use') {
           next = {
             type: 'tool_use',
@@ -234,23 +230,23 @@ function handleClaudeEvent(
             id: block.id,
             status: 'running',
             inputJson: '',
-          }
+          };
         }
-        if (!next) return mm
-        return { ...mm, segments: withAt(mm.segments, ev.index, next) }
+        if (!next) return mm;
+        return { ...mm, segments: withAt(mm.segments, ev.index, next) };
       }),
-    )
+    );
   } else if (ev.type === 'content_block_delta') {
     setMessages((m) =>
       m.map((mm) => {
-        if (mm.id !== assistantMsgId || mm.role !== 'assistant') return mm
-        const cur = mm.segments[ev.index]
-        if (!cur) return mm
+        if (mm.id !== assistantMsgId || mm.role !== 'assistant') return mm;
+        const cur = mm.segments[ev.index];
+        if (!cur) return mm;
         if (cur.type === 'text' && ev.delta.type === 'text_delta') {
           return {
             ...mm,
             segments: withAt(mm.segments, ev.index, { ...cur, text: cur.text + ev.delta.text }),
-          }
+          };
         }
         if (cur.type === 'tool_use' && ev.delta.type === 'input_json_delta') {
           return {
@@ -259,24 +255,24 @@ function handleClaudeEvent(
               ...cur,
               inputJson: (cur.inputJson ?? '') + ev.delta.partial_json,
             }),
-          }
+          };
         }
-        return mm
+        return mm;
       }),
-    )
+    );
   } else if (ev.type === 'content_block_stop') {
     setMessages((m) =>
       m.map((mm) => {
-        if (mm.id !== assistantMsgId || mm.role !== 'assistant') return mm
-        const cur = mm.segments[ev.index]
+        if (mm.id !== assistantMsgId || mm.role !== 'assistant') return mm;
+        const cur = mm.segments[ev.index];
         if (cur?.type === 'tool_use') {
           return {
             ...mm,
             segments: withAt(mm.segments, ev.index, { ...cur, status: 'done' }),
-          }
+          };
         }
-        return mm
+        return mm;
       }),
-    )
+    );
   }
 }

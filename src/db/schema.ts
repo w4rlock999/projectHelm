@@ -1,5 +1,5 @@
-import { sql } from 'drizzle-orm'
-import { integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { sql } from 'drizzle-orm';
+import { integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 export const agents = sqliteTable('agents', {
   id: text('id').primaryKey(),
@@ -28,7 +28,7 @@ export const agents = sqliteTable('agents', {
   createdAt: integer('created_at', { mode: 'timestamp' })
     .notNull()
     .default(sql`(unixepoch())`),
-})
+});
 
 // The shared tool library: user-authored custom tool *definitions*, owned by no
 // single agent. Agents reference them via `agentTools`. When an agent is
@@ -49,7 +49,7 @@ export const tools = sqliteTable('tools', {
   updatedAt: integer('updated_at', { mode: 'timestamp' })
     .notNull()
     .default(sql`(unixepoch())`),
-})
+});
 
 // Many-to-many: which library tools each agent has been assigned. Assigning a
 // tool materializes it into the agent's workspace; unassigning removes it.
@@ -67,7 +67,7 @@ export const agentTools = sqliteTable(
       .default(sql`(unixepoch())`),
   },
   (t) => [primaryKey({ columns: [t.agentId, t.toolId] })],
-)
+);
 
 // A gateway is the agent's credentialed binding to a messaging platform
 // (v0: Telegram only) — its outbound voice (the `send-telegram` tool) and
@@ -87,7 +87,7 @@ export const gateways = sqliteTable('gateways', {
   createdAt: integer('created_at', { mode: 'timestamp' })
     .notNull()
     .default(sql`(unixepoch())`),
-})
+});
 
 // One conversation under a gateway, keyed by Telegram chat.id — the
 // principal. Holds the per-chat Claude session (when the agent's sessionScope
@@ -114,7 +114,7 @@ export const gatewaysChat = sqliteTable(
     lastMessageAt: integer('last_message_at', { mode: 'timestamp' }),
   },
   (t) => [uniqueIndex('gateway_chat_uq').on(t.gatewayId, t.chatId)],
-)
+);
 
 // Cron-scheduled prompts fired into the agent by the wrapper. The agent can
 // self-manage these via the built-in `heartbeat` tool.
@@ -139,12 +139,12 @@ export const heartbeats = sqliteTable('heartbeats', {
   createdAt: integer('created_at', { mode: 'timestamp' })
     .notNull()
     .default(sql`(unixepoch())`),
-})
+});
 
-export type Agent = typeof agents.$inferSelect
-export type NewAgent = typeof agents.$inferInsert
-export type Tool = typeof tools.$inferSelect
-export type AgentTool = typeof agentTools.$inferSelect
-export type Gateway = typeof gateways.$inferSelect
-export type GatewayChat = typeof gatewaysChat.$inferSelect
-export type Heartbeat = typeof heartbeats.$inferSelect
+export type Agent = typeof agents.$inferSelect;
+export type NewAgent = typeof agents.$inferInsert;
+export type Tool = typeof tools.$inferSelect;
+export type AgentTool = typeof agentTools.$inferSelect;
+export type Gateway = typeof gateways.$inferSelect;
+export type GatewayChat = typeof gatewaysChat.$inferSelect;
+export type Heartbeat = typeof heartbeats.$inferSelect;

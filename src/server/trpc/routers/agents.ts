@@ -1,5 +1,5 @@
-import { TRPCError } from '@trpc/server'
-import { z } from 'zod'
+import { TRPCError } from '@trpc/server';
+import { z } from 'zod';
 import {
   createAgent,
   deleteAgent,
@@ -9,18 +9,18 @@ import {
   updateAgentSessionRecall,
   updateAgentSessionScope,
   updateAgentSystemPrompt,
-} from '../../agents.ts'
-import { publicProcedure, router } from '../init.ts'
+} from '../../agents.ts';
+import { publicProcedure, router } from '../init.ts';
 
-const idInput = z.object({ id: z.string().uuid() })
+const idInput = z.object({ id: z.string().uuid() });
 
 export const agentsRouter = router({
   list: publicProcedure.query(() => listAgents()),
 
   get: publicProcedure.input(idInput).query(({ input }) => {
-    const agent = loadAgent(input.id)
-    if (!agent) throw new TRPCError({ code: 'NOT_FOUND' })
-    return agent
+    const agent = loadAgent(input.id);
+    if (!agent) throw new TRPCError({ code: 'NOT_FOUND' });
+    return agent;
   }),
 
   create: publicProcedure
@@ -44,25 +44,25 @@ export const agentsRouter = router({
       }),
     )
     .mutation(({ input }) => {
-      const agent = loadAgent(input.id)
-      if (!agent) throw new TRPCError({ code: 'NOT_FOUND' })
-      if (input.systemPrompt) updateAgentSystemPrompt(input.id, input.systemPrompt)
-      if (input.sessionScope) updateAgentSessionScope(input.id, input.sessionScope)
-      if (input.sessionRecall) updateAgentSessionRecall(input.id, input.sessionRecall)
-      return loadAgent(input.id)!
+      const agent = loadAgent(input.id);
+      if (!agent) throw new TRPCError({ code: 'NOT_FOUND' });
+      if (input.systemPrompt) updateAgentSystemPrompt(input.id, input.systemPrompt);
+      if (input.sessionScope) updateAgentSessionScope(input.id, input.sessionScope);
+      if (input.sessionRecall) updateAgentSessionRecall(input.id, input.sessionRecall);
+      return loadAgent(input.id)!;
     }),
 
   delete: publicProcedure.input(idInput).mutation(({ input }) => {
-    const agent = loadAgent(input.id)
-    if (!agent) throw new TRPCError({ code: 'NOT_FOUND' })
-    deleteAgent(input.id)
-    return { id: input.id }
+    const agent = loadAgent(input.id);
+    if (!agent) throw new TRPCError({ code: 'NOT_FOUND' });
+    deleteAgent(input.id);
+    return { id: input.id };
   }),
 
   resetSession: publicProcedure.input(idInput).mutation(({ input }) => {
-    const agent = loadAgent(input.id)
-    if (!agent) throw new TRPCError({ code: 'NOT_FOUND' })
-    resetAgentSession(input.id)
-    return loadAgent(input.id)!
+    const agent = loadAgent(input.id);
+    if (!agent) throw new TRPCError({ code: 'NOT_FOUND' });
+    resetAgentSession(input.id);
+    return loadAgent(input.id)!;
   }),
-})
+});

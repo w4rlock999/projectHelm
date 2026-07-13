@@ -1,12 +1,12 @@
-import { Link } from '@tanstack/react-router'
-import { RotateCcw, Trash2 } from 'lucide-react'
-import { Card } from '#/components/ui/card'
-import { cn } from '#/lib/utils'
-import { glass, glassInteractive, monoMeta } from '#/lib/glass'
-import { trpc, type Agent } from '#/lib/trpc'
+import { Link } from '@tanstack/react-router';
+import { RotateCcw, Trash2 } from 'lucide-react';
+import { Card } from '#/components/ui/card';
+import { cn } from '#/lib/utils';
+import { glass, glassInteractive, monoMeta } from '#/lib/glass';
+import { trpc, type Agent } from '#/lib/trpc';
 
 interface Props {
-  agent: Agent
+  agent: Agent;
 }
 
 /**
@@ -15,34 +15,41 @@ interface Props {
  * quiet footer so the surface stays calm.
  */
 export function FleetCard({ agent }: Props) {
-  const utils = trpc.useUtils()
+  const utils = trpc.useUtils();
   const resetMutation = trpc.agents.resetSession.useMutation({
     onSuccess: () => {
-      utils.agents.list.invalidate()
-      utils.agents.get.invalidate({ id: agent.id })
+      utils.agents.list.invalidate();
+      utils.agents.get.invalidate({ id: agent.id });
     },
-  })
+  });
   const deleteMutation = trpc.agents.delete.useMutation({
     onSuccess: () => utils.agents.list.invalidate(),
-  })
+  });
 
-  const active = Boolean(agent.claudeSessionId)
+  const active = Boolean(agent.claudeSessionId);
 
   function onReset(e: React.MouseEvent) {
-    e.preventDefault()
-    if (!confirm(`Reset conversation for "${agent.name}"? Chat history will be forgotten.`)) return
-    resetMutation.mutate({ id: agent.id })
+    e.preventDefault();
+    if (!confirm(`Reset conversation for "${agent.name}"? Chat history will be forgotten.`)) return;
+    resetMutation.mutate({ id: agent.id });
   }
 
   function onDelete(e: React.MouseEvent) {
-    e.preventDefault()
-    if (!confirm(`Delete "${agent.name}"? This removes the agent and its workspace on disk.`)) return
-    deleteMutation.mutate({ id: agent.id })
+    e.preventDefault();
+    if (!confirm(`Delete "${agent.name}"? This removes the agent and its workspace on disk.`))
+      return;
+    deleteMutation.mutate({ id: agent.id });
   }
 
   return (
     <Link to="/agents/$id" params={{ id: agent.id }} className="group block h-full no-underline">
-      <Card className={cn(glass, glassInteractive, 'flex h-full flex-col gap-0 rounded-2xl py-0 p-5 text-card-foreground')}>
+      <Card
+        className={cn(
+          glass,
+          glassInteractive,
+          'text-card-foreground flex h-full flex-col gap-0 rounded-2xl p-5 py-0',
+        )}
+      >
         <div className="flex items-start justify-between gap-3">
           <h3 className="text-base font-semibold text-[var(--warm-ink)]">{agent.name}</h3>
           <span
@@ -52,12 +59,14 @@ export function FleetCard({ agent }: Props) {
             )}
             title={active ? `session ${agent.claudeSessionId}` : 'no active session'}
           >
-            <span className={cn('size-1.5 rounded-full', active ? 'bg-emerald-300' : 'bg-white/30')} />
+            <span
+              className={cn('size-1.5 rounded-full', active ? 'bg-emerald-300' : 'bg-white/30')}
+            />
             {active ? 'active' : 'idle'}
           </span>
         </div>
 
-        <p className="mt-3 line-clamp-3 flex-1 text-sm leading-relaxed text-[var(--warm-ink-soft)] whitespace-pre-wrap">
+        <p className="mt-3 line-clamp-3 flex-1 text-sm leading-relaxed whitespace-pre-wrap text-[var(--warm-ink-soft)]">
           {agent.systemPrompt}
         </p>
 
@@ -92,5 +101,5 @@ export function FleetCard({ agent }: Props) {
         </div>
       </Card>
     </Link>
-  )
+  );
 }

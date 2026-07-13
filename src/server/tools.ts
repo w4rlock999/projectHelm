@@ -1,23 +1,17 @@
-import {
-  chmodSync,
-  mkdirSync,
-  readdirSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs'
-import { randomUUID } from 'node:crypto'
-import { and, eq, inArray } from 'drizzle-orm'
-import { db } from '../db/index.ts'
-import { agents, agentTools, gateways, tools } from '../db/schema.ts'
-import { paths } from './paths.ts'
-import type { Tool } from '../db/schema.ts'
+import { chmodSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { and, eq, inArray } from 'drizzle-orm';
+import { db } from '../db/index.ts';
+import { agents, agentTools, gateways, tools } from '../db/schema.ts';
+import { paths } from './paths.ts';
+import type { Tool } from '../db/schema.ts';
 
 // `localhost` (not 127.0.0.1) so the baked tool scripts reach the daemon
 // regardless of whether it binds IPv4 or IPv6 — Node's fetch tries both.
-const BASE_URL = process.env.HELM_BASE_URL ?? 'http://localhost:3000'
+const BASE_URL = process.env.HELM_BASE_URL ?? 'http://localhost:3000';
 
-const TOOLS_BLOCK_START = '<!-- helm:tools:start -->'
-const TOOLS_BLOCK_END = '<!-- helm:tools:end -->'
+const TOOLS_BLOCK_START = '<!-- helm:tools:start -->';
+const TOOLS_BLOCK_END = '<!-- helm:tools:end -->';
 
 const SHEBANGS: Record<string, string> = {
   bash: '#!/usr/bin/env bash',
@@ -25,7 +19,7 @@ const SHEBANGS: Record<string, string> = {
   node: '#!/usr/bin/env node',
   python: '#!/usr/bin/env python3',
   python3: '#!/usr/bin/env python3',
-}
+};
 
 /** Filesystem-safe tool filename derived from the tool name. */
 export function toolFileName(name: string): string {
@@ -33,29 +27,29 @@ export function toolFileName(name: string): string {
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-  return safe || 'tool'
+    .replace(/^-+|-+$/g, '');
+  return safe || 'tool';
 }
 
 // ── Tool library CRUD (definitions, owned by no agent) ──────────────────────
 
 export interface CreateToolInput {
-  name: string
-  description: string
-  interpreter?: string
-  source: string
+  name: string;
+  description: string;
+  interpreter?: string;
+  source: string;
 }
 
 export function listLibraryTools(): Tool[] {
-  return db.select().from(tools).all()
+  return db.select().from(tools).all();
 }
 
 export function getLibraryTool(id: string): Tool | null {
-  return db.select().from(tools).where(eq(tools.id, id)).get() ?? null
+  return db.select().from(tools).where(eq(tools.id, id)).get() ?? null;
 }
 
 export function createLibraryTool(input: CreateToolInput): Tool {
-  const now = new Date()
+  const now = new Date();
   const row: Tool = {
     id: randomUUID(),
     name: input.name,
@@ -64,31 +58,34 @@ export function createLibraryTool(input: CreateToolInput): Tool {
     source: input.source,
     createdAt: now,
     updatedAt: now,
-  }
-  db.insert(tools).values(row).run()
-  return row
+  };
+  db.insert(tools).values(row).run();
+  return row;
 }
 
 export function updateLibraryTool(
   id: string,
   patch: Partial<Pick<Tool, 'name' | 'description' | 'interpreter' | 'source'>>,
 ): Tool | null {
-  const existing = db.select().from(tools).where(eq(tools.id, id)).get()
-  if (!existing) return null
-  db.update(tools).set({ ...patch, updatedAt: new Date() }).where(eq(tools.id, id)).run()
+  const existing = db.select().from(tools).where(eq(tools.id, id)).get();
+  if (!existing) return null;
+  db.update(tools)
+    .set({ ...patch, updatedAt: new Date() })
+    .where(eq(tools.id, id))
+    .run();
   // A library tool is shared — re-materialize every agent that has it assigned.
-  for (const agentId of agentsUsingTool(id)) syncAgentTools(agentId)
-  return db.select().from(tools).where(eq(tools.id, id)).get() ?? null
+  for (const agentId of agentsUsingTool(id)) syncAgentTools(agentId);
+  return db.select().from(tools).where(eq(tools.id, id)).get() ?? null;
 }
 
 export function deleteLibraryTool(id: string): boolean {
-  const existing = db.select().from(tools).where(eq(tools.id, id)).get()
-  if (!existing) return false
+  const existing = db.select().from(tools).where(eq(tools.id, id)).get();
+  if (!existing) return false;
   // Capture assignees before the FK cascade clears agent_tools.
-  const affected = agentsUsingTool(id)
-  db.delete(tools).where(eq(tools.id, id)).run()
-  for (const agentId of affected) syncAgentTools(agentId)
-  return true
+  const affected = agentsUsingTool(id);
+  db.delete(tools).where(eq(tools.id, id)).run();
+  for (const agentId of affected) syncAgentTools(agentId);
+  return true;
 }
 
 // ── Assignments (agent ↔ library tool) ──────────────────────────────────────
@@ -100,14 +97,14 @@ export function listAgentToolIds(agentId: string): string[] {
     .from(agentTools)
     .where(eq(agentTools.agentId, agentId))
     .all()
-    .map((r) => r.toolId)
+    .map((r) => r.toolId);
 }
 
 /** Library tool definitions assigned to an agent. */
 export function listAgentTools(agentId: string): Tool[] {
-  const ids = listAgentToolIds(agentId)
-  if (ids.length === 0) return []
-  return db.select().from(tools).where(inArray(tools.id, ids)).all()
+  const ids = listAgentToolIds(agentId);
+  if (ids.length === 0) return [];
+  return db.select().from(tools).where(inArray(tools.id, ids)).all();
 }
 
 /** Agent ids that have a given library tool assigned. */
@@ -117,28 +114,29 @@ export function agentsUsingTool(toolId: string): string[] {
     .from(agentTools)
     .where(eq(agentTools.toolId, toolId))
     .all()
-    .map((r) => r.agentId)
+    .map((r) => r.agentId);
 }
 
 export function assignTool(agentId: string, toolId: string): void {
-  db.insert(agentTools).values({ agentId, toolId, createdAt: new Date() }).onConflictDoNothing().run()
-  syncAgentTools(agentId)
+  db.insert(agentTools)
+    .values({ agentId, toolId, createdAt: new Date() })
+    .onConflictDoNothing()
+    .run();
+  syncAgentTools(agentId);
 }
 
 export function unassignTool(agentId: string, toolId: string): void {
   db.delete(agentTools)
     .where(and(eq(agentTools.agentId, agentId), eq(agentTools.toolId, toolId)))
-    .run()
-  syncAgentTools(agentId)
+    .run();
+  syncAgentTools(agentId);
 }
 
 // ── Materialization ─────────────────────────────────────────────────────────
 
 /** True if the agent has a Telegram gateway (so it gets a send-telegram tool). */
 function agentHasGateway(agentId: string): boolean {
-  return (
-    db.select().from(gateways).where(eq(gateways.agentId, agentId)).all().length > 0
-  )
+  return db.select().from(gateways).where(eq(gateways.agentId, agentId)).all().length > 0;
 }
 
 /**
@@ -147,67 +145,67 @@ function agentHasGateway(agentId: string): boolean {
  * deleted tools don't linger.
  */
 export function materializeAgentTools(agentId: string): void {
-  const dir = paths.agentToolsDir(agentId)
+  const dir = paths.agentToolsDir(agentId);
   try {
-    for (const entry of readdirSync(dir)) rmSync(`${dir}/${entry}`, { force: true })
+    for (const entry of readdirSync(dir)) rmSync(`${dir}/${entry}`, { force: true });
   } catch {
     /* dir doesn't exist yet */
   }
-  mkdirSync(dir, { recursive: true })
+  mkdirSync(dir, { recursive: true });
 
-  const agent = db.select().from(agents).where(eq(agents.id, agentId)).get()
+  const agent = db.select().from(agents).where(eq(agents.id, agentId)).get();
 
   if (agent?.isOperator) {
     // helmCaptain: the helm CLI to inspect the fleet (read-only in part 1).
-    writeExecutable(`${dir}/helm`, operatorCliSource())
+    writeExecutable(`${dir}/helm`, operatorCliSource());
   } else {
     // Built-in: heartbeat self-config (always present on regular agents).
-    writeExecutable(`${dir}/heartbeat`, heartbeatToolSource(agentId))
+    writeExecutable(`${dir}/heartbeat`, heartbeatToolSource(agentId));
     // Built-in: send-telegram (only when a gateway exists).
     if (agentHasGateway(agentId)) {
-      writeExecutable(`${dir}/send-telegram`, sendTelegramToolSource(agentId))
+      writeExecutable(`${dir}/send-telegram`, sendTelegramToolSource(agentId));
     }
   }
 
   // Assigned library tools (apply to both operator and regular agents).
   for (const tool of listAgentTools(agentId)) {
-    const shebang = SHEBANGS[tool.interpreter] ?? `#!/usr/bin/env ${tool.interpreter}`
-    const body = tool.source.startsWith('#!') ? tool.source : `${shebang}\n${tool.source}`
-    writeExecutable(`${dir}/${toolFileName(tool.name)}`, body)
+    const shebang = SHEBANGS[tool.interpreter] ?? `#!/usr/bin/env ${tool.interpreter}`;
+    const body = tool.source.startsWith('#!') ? tool.source : `${shebang}\n${tool.source}`;
+    writeExecutable(`${dir}/${toolFileName(tool.name)}`, body);
   }
 }
 
 function writeExecutable(path: string, contents: string): void {
-  writeFileSync(path, contents.endsWith('\n') ? contents : `${contents}\n`)
-  chmodSync(path, 0o755)
+  writeFileSync(path, contents.endsWith('\n') ? contents : `${contents}\n`);
+  chmodSync(path, 0o755);
 }
 
 /** Regenerate workspace/tools + CLAUDE.md for an agent. Call after any change. */
 export function syncAgentTools(agentId: string): void {
-  materializeAgentTools(agentId)
-  renderClaudeMd(agentId)
+  materializeAgentTools(agentId);
+  renderClaudeMd(agentId);
 }
 
 // ── CLAUDE.md rendering ─────────────────────────────────────────────────────
 
 /** Compose CLAUDE.md = agent system prompt + a managed tools block. */
 export function renderClaudeMd(agentId: string): void {
-  const agent = db.select().from(agents).where(eq(agents.id, agentId)).get()
-  if (!agent) return
+  const agent = db.select().from(agents).where(eq(agents.id, agentId)).get();
+  if (!agent) return;
 
-  const custom = listAgentTools(agentId)
-  const hasGateway = agentHasGateway(agentId)
+  const custom = listAgentTools(agentId);
+  const hasGateway = agentHasGateway(agentId);
 
-  const lines: string[] = [TOOLS_BLOCK_START, '', '## Tools available to you', '']
+  const lines: string[] = [TOOLS_BLOCK_START, '', '## Tools available to you', ''];
   lines.push(
     'You have local scripts in the `tools/` directory. Invoke them with the Bash tool',
     'from your working directory (e.g. `tools/heartbeat list`). Use them whenever your',
     'task or the situation calls for it — they are yours to use autonomously.',
     '',
-  )
+  );
 
   if (agent.isOperator) {
-    lines.push('### helm — inspect helmConsole (read-only for now)')
+    lines.push('### helm — inspect helmConsole (read-only for now)');
     lines.push(
       'Run these via Bash to see the live state of the fleet and the tool library.',
       'Always check live state with `helm` before answering questions about agents —',
@@ -221,9 +219,9 @@ export function renderClaudeMd(agentId: string): void {
       'Write commands (creating/configuring agents, authoring tools) are coming next —',
       'you cannot modify anything yet.',
       '',
-    )
+    );
   } else {
-    lines.push('### heartbeat — schedule recurring prompts to yourself')
+    lines.push('### heartbeat — schedule recurring prompts to yourself');
     lines.push(
       'A heartbeat fires a prompt into you on a cron schedule, even when no one is',
       'chatting. Manage your own heartbeats:',
@@ -247,10 +245,10 @@ export function renderClaudeMd(agentId: string): void {
       'tools/heartbeat add --cron "0 9 * * *" --prompt "Good morning!" --target chat --chat 847392011',
       '```',
       '',
-    )
+    );
 
     if (hasGateway) {
-      lines.push('### send-telegram — your voice on Telegram')
+      lines.push('### send-telegram — your voice on Telegram');
       lines.push(
         'This tool is the ONLY way to deliver a message to the user on Telegram.',
         'Your normal turn/reply text is NOT sent to them — it is only logged. To',
@@ -271,16 +269,16 @@ export function renderClaudeMd(agentId: string): void {
         'reply, send it with the tool, then finish the turn. The same applies to any',
         'proactive or heartbeat update you want the user to actually see.',
         '',
-      )
+      );
     }
   }
 
   for (const tool of custom) {
-    lines.push(`### ${toolFileName(tool.name)} — ${tool.description}`)
-    lines.push('```', `tools/${toolFileName(tool.name)} [args]`, '```', '')
+    lines.push(`### ${toolFileName(tool.name)} — ${tool.description}`);
+    lines.push('```', `tools/${toolFileName(tool.name)} [args]`, '```', '');
   }
 
-  lines.push('## Your data')
+  lines.push('## Your data');
   lines.push(
     'You have two durable stores, provided as environment variables (use them from',
     'the Bash tool, e.g. `ls "$HELM_SESSION_STORE_DIR"`). They persist across turns',
@@ -293,7 +291,7 @@ export function renderClaudeMd(agentId: string): void {
     '  (conversation) only. Use it for context and memory specific to whoever you',
     '  are talking to now.',
     '',
-  )
+  );
   if (agent.sessionRecall === 'all') {
     lines.push(
       '- **`$HELM_SESSIONS_DIR`** — a **read-only** view of *all* your session',
@@ -301,7 +299,7 @@ export function renderClaudeMd(agentId: string): void {
       '  `$HELM_SESSION_STORE_DIR`). Grep across it to recall what happened in your',
       '  other conversations. Write only to `$HELM_SESSION_STORE_DIR`, never here.',
       '',
-    )
+    );
   }
   if (agent.sessionScope === 'chat') {
     lines.push(
@@ -315,15 +313,15 @@ export function renderClaudeMd(agentId: string): void {
       'becomes visible to every session, so keep private, per-person data in',
       '`$HELM_SESSION_STORE_DIR`, never in the agent store.',
       '',
-    )
+    );
   }
 
-  lines.push(TOOLS_BLOCK_END)
-  const block = lines.join('\n')
+  lines.push(TOOLS_BLOCK_END);
+  const block = lines.join('\n');
 
-  const claudeMd = `${agent.systemPrompt.trim()}\n\n${block}\n`
-  mkdirSync(paths.agentWorkspaceDir(agentId), { recursive: true })
-  writeFileSync(paths.agentClaudeMd(agentId), claudeMd)
+  const claudeMd = `${agent.systemPrompt.trim()}\n\n${block}\n`;
+  mkdirSync(paths.agentWorkspaceDir(agentId), { recursive: true });
+  writeFileSync(paths.agentClaudeMd(agentId), claudeMd);
 }
 
 // ── Built-in tool sources ───────────────────────────────────────────────────
@@ -406,7 +404,7 @@ async function api(method, path, body) {
     process.exit(1);
   }
 })().catch(function (e) { console.error(String(e)); process.exit(1); });
-`
+`;
 }
 
 // The helm CLI (operator-only). Talks to the daemon's REST endpoints; fleet ops
@@ -542,7 +540,7 @@ function usage() {
 
   } else { console.error('unknown command: ' + cmd); usage(); process.exit(1); }
 })().catch(function (e) { console.error(String(e)); process.exit(1); });
-`
+`;
 }
 
 function sendTelegramToolSource(agentId: string): string {
@@ -572,5 +570,5 @@ if (!text) { console.error('usage: send-telegram [--chat <id>] "<message>"'); pr
   if (!res.ok) { console.error('send failed ' + res.status + ': ' + t); process.exit(1); }
   console.log('sent');
 })().catch(function (e) { console.error(String(e)); process.exit(1); });
-`
+`;
 }

@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react'
-import { Link } from '@tanstack/react-router'
-import { ArrowLeft, RotateCcw } from 'lucide-react'
-import { ChatView } from '#/components/chat/ChatView'
-import { cn } from '#/lib/utils'
-import { monoMeta } from '#/lib/glass'
-import { trpc } from '#/lib/trpc'
+import { useEffect, useState } from 'react';
+import { Link } from '@tanstack/react-router';
+import { ArrowLeft, RotateCcw } from 'lucide-react';
+import { ChatView } from '#/components/chat/ChatView';
+import { cn } from '#/lib/utils';
+import { monoMeta } from '#/lib/glass';
+import { trpc } from '#/lib/trpc';
 
 /**
  * helmCaptain chat, rendered inline as the main card's content (replacing
@@ -12,26 +12,26 @@ import { trpc } from '#/lib/trpc'
  * short boot animation before swapping in the live chat.
  */
 export function CaptainPanel() {
-  const utils = trpc.useUtils()
-  const { data: captain, error } = trpc.captain.get.useQuery()
+  const utils = trpc.useUtils();
+  const { data: captain, error } = trpc.captain.get.useQuery();
   const resetMutation = trpc.captain.resetSession.useMutation({
     onSuccess: () => utils.captain.get.invalidate(),
-  })
+  });
 
   // Hold the boot animation for a beat so it always reads, even when the
   // captain query resolves instantly from cache.
-  const [booting, setBooting] = useState(true)
+  const [booting, setBooting] = useState(true);
   useEffect(() => {
-    const id = setTimeout(() => setBooting(false), 1100)
-    return () => clearTimeout(id)
-  }, [])
+    const id = setTimeout(() => setBooting(false), 1100);
+    return () => clearTimeout(id);
+  }, []);
 
-  const ready = !booting && Boolean(captain)
+  const ready = !booting && Boolean(captain);
 
   function onReset() {
-    if (!captain?.claudeSessionId || resetMutation.isPending) return
-    if (!confirm('Reset helmCaptain conversation? It will forget the chat history.')) return
-    resetMutation.mutate()
+    if (!captain?.claudeSessionId || resetMutation.isPending) return;
+    if (!confirm('Reset helmCaptain conversation? It will forget the chat history.')) return;
+    resetMutation.mutate();
   }
 
   return (
@@ -102,7 +102,7 @@ export function CaptainPanel() {
         )}
       </div>
     </div>
-  )
+  );
 }
 
 /** The "cool loading thing": a turning helm with a sonar ring and a shimmer bar. */
@@ -129,5 +129,5 @@ function CaptainBoot() {
         </div>
       </div>
     </div>
-  )
+  );
 }

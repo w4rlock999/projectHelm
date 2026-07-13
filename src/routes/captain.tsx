@@ -1,22 +1,22 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
-import { useState } from 'react'
-import { Button } from '#/components/ui/button'
-import { ChatView } from '#/components/chat/ChatView'
-import { trpc } from '#/lib/trpc'
+import { createFileRoute, Link } from '@tanstack/react-router';
+import { useState } from 'react';
+import { Button } from '#/components/ui/button';
+import { ChatView } from '#/components/chat/ChatView';
+import { trpc } from '#/lib/trpc';
 
-export const Route = createFileRoute('/captain')({ component: CaptainPage })
+export const Route = createFileRoute('/captain')({ component: CaptainPage });
 
 function CaptainPage() {
-  const [promptOpen, setPromptOpen] = useState(false)
-  const utils = trpc.useUtils()
-  const { data: captain, error } = trpc.captain.get.useQuery()
+  const [promptOpen, setPromptOpen] = useState(false);
+  const utils = trpc.useUtils();
+  const { data: captain, error } = trpc.captain.get.useQuery();
   const resetMutation = trpc.captain.resetSession.useMutation({
     onSuccess: () => utils.captain.get.invalidate(),
-  })
+  });
 
   function onReset() {
-    if (!confirm('Reset helmCaptain conversation? It will forget the chat history.')) return
-    resetMutation.mutate()
+    if (!confirm('Reset helmCaptain conversation? It will forget the chat history.')) return;
+    resetMutation.mutate();
   }
 
   if (error) {
@@ -25,12 +25,12 @@ function CaptainPage() {
         <Button variant="ghost" asChild className="mb-4">
           <Link to="/">← Back</Link>
         </Button>
-        <p className="text-sm text-destructive">{error.message}</p>
+        <p className="text-destructive text-sm">{error.message}</p>
       </div>
-    )
+    );
   }
   if (!captain) {
-    return <p className="p-8 text-sm text-muted-foreground">Loading…</p>
+    return <p className="text-muted-foreground p-8 text-sm">Loading…</p>;
   }
 
   return (
@@ -44,13 +44,13 @@ function CaptainPage() {
           <h1 className="flex items-center gap-2 text-2xl font-bold">
             <span aria-hidden>⎈</span> helmCaptain
           </h1>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="text-muted-foreground mt-1 text-xs">
             operator agent · model: {captain.model ?? 'sonnet'}
             {captain.claudeSessionId
               ? ` · session ${captain.claudeSessionId.slice(0, 8)}…`
               : ' · no session yet'}
           </p>
-          <p className="mt-2 max-w-prose text-sm text-muted-foreground">
+          <p className="text-muted-foreground mt-2 max-w-prose text-sm">
             Your control-plane operator. Ask it to help design agents, draft tools, and plan
             orchestration. (Direct fleet actions via helmCLI are coming — for now it advises and
             drafts.)
@@ -77,13 +77,13 @@ function CaptainPage() {
       </header>
 
       {promptOpen ? (
-        <section className="mb-4 rounded-md border bg-muted/30 px-4 py-3">
-          <p className="mb-1 text-xs font-medium text-muted-foreground">Steering (CLAUDE.md)</p>
-          <pre className="whitespace-pre-wrap text-xs leading-relaxed">{captain.systemPrompt}</pre>
+        <section className="bg-muted/30 mb-4 rounded-md border px-4 py-3">
+          <p className="text-muted-foreground mb-1 text-xs font-medium">Steering (CLAUDE.md)</p>
+          <pre className="text-xs leading-relaxed whitespace-pre-wrap">{captain.systemPrompt}</pre>
         </section>
       ) : null}
 
       <ChatView agent={captain} onSessionAppeared={() => utils.captain.get.invalidate()} />
     </div>
-  )
+  );
 }

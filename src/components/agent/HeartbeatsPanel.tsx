@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Button } from '../ui/button'
+import { useState } from 'react';
+import { Button } from '../ui/button';
 import {
   Dialog,
   DialogContent,
@@ -7,38 +7,38 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '../ui/dialog'
-import { Input } from '../ui/input'
-import { Label } from '../ui/label'
-import { Textarea } from '../ui/textarea'
-import { trpc, type Heartbeat } from '#/lib/trpc'
+} from '../ui/dialog';
+import { Input } from '../ui/input';
+import { Label } from '../ui/label';
+import { Textarea } from '../ui/textarea';
+import { trpc, type Heartbeat } from '#/lib/trpc';
 
 const PRESETS: Array<{ label: string; cron: string }> = [
   { label: 'Every minute', cron: '* * * * *' },
   { label: 'Every 30 min', cron: '*/30 * * * *' },
   { label: 'Hourly', cron: '0 * * * *' },
   { label: 'Daily 9am', cron: '0 9 * * *' },
-]
+];
 
 export function HeartbeatsPanel({ agentId }: { agentId: string }) {
-  const utils = trpc.useUtils()
-  const { data: heartbeats } = trpc.heartbeats.list.useQuery({ agentId })
-  const [editing, setEditing] = useState<Heartbeat | null>(null)
-  const [creating, setCreating] = useState(false)
+  const utils = trpc.useUtils();
+  const { data: heartbeats } = trpc.heartbeats.list.useQuery({ agentId });
+  const [editing, setEditing] = useState<Heartbeat | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const updateMutation = trpc.heartbeats.update.useMutation({
     onSuccess: () => utils.heartbeats.list.invalidate({ agentId }),
-  })
+  });
   const deleteMutation = trpc.heartbeats.delete.useMutation({
     onSuccess: () => utils.heartbeats.list.invalidate({ agentId }),
-  })
+  });
 
   return (
     <section className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-medium">Heartbeats</h2>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-muted-foreground text-sm">
             Cron-scheduled prompts fired into the agent — even when no one's chatting. The agent can
             also manage these itself via its <code className="text-xs">heartbeat</code> tool.
           </p>
@@ -47,7 +47,7 @@ export function HeartbeatsPanel({ agentId }: { agentId: string }) {
       </div>
 
       {!heartbeats || heartbeats.length === 0 ? (
-        <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+        <p className="text-muted-foreground rounded-md border border-dashed p-6 text-center text-sm">
           No heartbeats yet.
         </p>
       ) : (
@@ -58,10 +58,10 @@ export function HeartbeatsPanel({ agentId }: { agentId: string }) {
                 <div className="min-w-0">
                   <p className="font-medium">
                     {h.name}{' '}
-                    <code className="text-xs font-normal text-muted-foreground">{h.cron}</code>
+                    <code className="text-muted-foreground text-xs font-normal">{h.cron}</code>
                   </p>
-                  <p className="text-sm text-muted-foreground line-clamp-2">{h.prompt}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
+                  <p className="text-muted-foreground line-clamp-2 text-sm">{h.prompt}</p>
+                  <p className="text-muted-foreground mt-1 text-xs">
                     {h.enabled ? 'active' : 'paused'} ·{' '}
                     {h.lastRunAt
                       ? `last ran ${new Date(h.lastRunAt).toLocaleString()}`
@@ -85,7 +85,8 @@ export function HeartbeatsPanel({ agentId }: { agentId: string }) {
                     size="sm"
                     disabled={deleteMutation.isPending}
                     onClick={() => {
-                      if (confirm(`Delete heartbeat "${h.name}"?`)) deleteMutation.mutate({ id: h.id })
+                      if (confirm(`Delete heartbeat "${h.name}"?`))
+                        deleteMutation.mutate({ id: h.id });
                     }}
                   >
                     Delete
@@ -102,13 +103,13 @@ export function HeartbeatsPanel({ agentId }: { agentId: string }) {
           agentId={agentId}
           heartbeat={editing}
           onClose={() => {
-            setCreating(false)
-            setEditing(null)
+            setCreating(false);
+            setEditing(null);
           }}
         />
       )}
     </section>
-  )
+  );
 }
 
 function HeartbeatDialog({
@@ -116,31 +117,31 @@ function HeartbeatDialog({
   heartbeat,
   onClose,
 }: {
-  agentId: string
-  heartbeat: Heartbeat | null
-  onClose: () => void
+  agentId: string;
+  heartbeat: Heartbeat | null;
+  onClose: () => void;
 }) {
-  const utils = trpc.useUtils()
-  const [name, setName] = useState(heartbeat?.name ?? '')
-  const [cron, setCron] = useState(heartbeat?.cron ?? '*/30 * * * *')
-  const [prompt, setPrompt] = useState(heartbeat?.prompt ?? '')
+  const utils = trpc.useUtils();
+  const [name, setName] = useState(heartbeat?.name ?? '');
+  const [cron, setCron] = useState(heartbeat?.cron ?? '*/30 * * * *');
+  const [prompt, setPrompt] = useState(heartbeat?.prompt ?? '');
 
   const onDone = () => {
-    utils.heartbeats.list.invalidate({ agentId })
-    onClose()
-  }
-  const createMutation = trpc.heartbeats.create.useMutation({ onSuccess: onDone })
-  const updateMutation = trpc.heartbeats.update.useMutation({ onSuccess: onDone })
-  const busy = createMutation.isPending || updateMutation.isPending
-  const error = createMutation.error?.message ?? updateMutation.error?.message ?? null
+    utils.heartbeats.list.invalidate({ agentId });
+    onClose();
+  };
+  const createMutation = trpc.heartbeats.create.useMutation({ onSuccess: onDone });
+  const updateMutation = trpc.heartbeats.update.useMutation({ onSuccess: onDone });
+  const busy = createMutation.isPending || updateMutation.isPending;
+  const error = createMutation.error?.message ?? updateMutation.error?.message ?? null;
 
   function submit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!cron.trim() || !prompt.trim()) return
+    e.preventDefault();
+    if (!cron.trim() || !prompt.trim()) return;
     if (heartbeat) {
-      updateMutation.mutate({ id: heartbeat.id, name: name || undefined, cron, prompt })
+      updateMutation.mutate({ id: heartbeat.id, name: name || undefined, cron, prompt });
     } else {
-      createMutation.mutate({ agentId, name: name || undefined, cron, prompt })
+      createMutation.mutate({ agentId, name: name || undefined, cron, prompt });
     }
   }
 
@@ -180,7 +181,7 @@ function HeartbeatDialog({
                     key={p.cron}
                     type="button"
                     onClick={() => setCron(p.cron)}
-                    className="rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground hover:bg-muted"
+                    className="text-muted-foreground hover:bg-muted rounded-full border px-2.5 py-0.5 text-xs"
                   >
                     {p.label}
                   </button>
@@ -198,7 +199,7 @@ function HeartbeatDialog({
                 required
               />
             </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            {error && <p className="text-destructive text-sm">{error}</p>}
           </div>
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
@@ -211,5 +212,5 @@ function HeartbeatDialog({
         </form>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

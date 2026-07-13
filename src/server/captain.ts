@@ -1,13 +1,13 @@
-import { existsSync, mkdirSync } from 'node:fs'
-import { randomUUID } from 'node:crypto'
-import { eq } from 'drizzle-orm'
-import { db } from '../db/index.ts'
-import { agents } from '../db/schema.ts'
-import { paths } from './paths.ts'
-import { syncAgentTools } from './tools.ts'
-import type { Agent } from '../db/schema.ts'
+import { existsSync, mkdirSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { eq } from 'drizzle-orm';
+import { db } from '../db/index.ts';
+import { agents } from '../db/schema.ts';
+import { paths } from './paths.ts';
+import { syncAgentTools } from './tools.ts';
+import type { Agent } from '../db/schema.ts';
 
-export const CAPTAIN_NAME = 'helmCaptain'
+export const CAPTAIN_NAME = 'helmCaptain';
 
 // Curated steering for the operator agent — its CLAUDE.md (and DB systemPrompt).
 // This is code-defined, so ensureHelmCaptain reconciles the row to it on change.
@@ -57,7 +57,7 @@ tools/helm tool unassign <toolId> --agent <agentId>
 
 ## Style
 
-Be a concise, technical peer. Lead with the answer/action. Make prompts and scripts production-quality. Ask a clarifying question only when intent is genuinely ambiguous — otherwise act, then report what you did.`
+Be a concise, technical peer. Lead with the answer/action. Make prompts and scripts production-quality. Ask a clarifying question only when intent is genuinely ambiguous — otherwise act, then report what you did.`;
 
 /**
  * Return the operator agent, scaffolding it on first call and reconciling it to
@@ -67,23 +67,26 @@ Be a concise, technical peer. Lead with the answer/action. Make prompts and scri
  * `helm` tool is missing (e.g. after an upgrade).
  */
 export function ensureHelmCaptain(): Agent {
-  const existing = db.select().from(agents).where(eq(agents.isOperator, true)).get()
+  const existing = db.select().from(agents).where(eq(agents.isOperator, true)).get();
 
   if (existing) {
-    const helmMissing = !existsSync(`${paths.agentToolsDir(existing.id)}/helm`)
+    const helmMissing = !existsSync(`${paths.agentToolsDir(existing.id)}/helm`);
     if (existing.systemPrompt !== CAPTAIN_PROMPT || helmMissing) {
       if (existing.systemPrompt !== CAPTAIN_PROMPT) {
-        db.update(agents).set({ systemPrompt: CAPTAIN_PROMPT }).where(eq(agents.id, existing.id)).run()
+        db.update(agents)
+          .set({ systemPrompt: CAPTAIN_PROMPT })
+          .where(eq(agents.id, existing.id))
+          .run();
       }
-      syncAgentTools(existing.id) // (re)materialize helm + re-render CLAUDE.md
-      return db.select().from(agents).where(eq(agents.id, existing.id)).get()!
+      syncAgentTools(existing.id); // (re)materialize helm + re-render CLAUDE.md
+      return db.select().from(agents).where(eq(agents.id, existing.id)).get()!;
     }
-    return existing
+    return existing;
   }
 
-  const id = randomUUID()
-  mkdirSync(paths.agentWorkspaceDir(id), { recursive: true })
-  mkdirSync(paths.agentLogsDir(id), { recursive: true })
+  const id = randomUUID();
+  mkdirSync(paths.agentWorkspaceDir(id), { recursive: true });
+  mkdirSync(paths.agentLogsDir(id), { recursive: true });
 
   const row: Agent = {
     id,
@@ -98,8 +101,8 @@ export function ensureHelmCaptain(): Agent {
     sessionRecall: 'none',
     isOperator: true,
     createdAt: new Date(),
-  }
-  db.insert(agents).values(row).run()
-  syncAgentTools(id) // materializes the helm tool + writes CLAUDE.md with the tools block
-  return row
+  };
+  db.insert(agents).values(row).run();
+  syncAgentTools(id); // materializes the helm tool + writes CLAUDE.md with the tools block
+  return row;
 }

@@ -47,10 +47,10 @@ Daemon is the single source of truth. CLI, GUI, webhook traffic all funnel throu
 
 ## Agent execution modes (both shipped in v0)
 
-| Mode | Mechanism | Helmship-ready |
-|---|---|---|
-| **Local-machine** | Claude Code spawned as child via `node-pty`, bound to `~/.projecthelm/agents/<name>/workspace`, allowed-tools list from agent config | No (host-bound) |
-| **Containered** | Per-agent OCI image built from a templated Dockerfile (base: Node + Claude Code + agent files); run via Docker/Podman with workspace volume mount | Yes (same image ships to cloud in M4) |
+| Mode              | Mechanism                                                                                                                                         | Helmship-ready                        |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| **Local-machine** | Claude Code spawned as child via `node-pty`, bound to `~/.projecthelm/agents/<name>/workspace`, allowed-tools list from agent config              | No (host-bound)                       |
+| **Containered**   | Per-agent OCI image built from a templated Dockerfile (base: Node + Claude Code + agent files); run via Docker/Podman with workspace volume mount | Yes (same image ships to cloud in M4) |
 
 `AgentRunner` interface keeps the daemon agnostic. On agent creation the user picks a mode. Container mode requires a detected runtime; if absent, the GUI prompts the user to install Docker Desktop / Podman / Colima.
 
@@ -133,6 +133,7 @@ Implication: the operator agent IS the backend for the GUI. The daemon's HTTP AP
   - Wrapper that detects/installs Node if missing, then runs the npm install
 
 Detected dependencies on first start:
+
 - `claude` CLI — required; GUI walks user through install + login if missing
 - `docker` or `podman` — optional; required only for container-mode agents; absence flagged in GUI
 
