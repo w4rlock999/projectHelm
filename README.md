@@ -1,202 +1,116 @@
-Welcome to your new TanStack Start app! 
+# Project Helm ⎈
 
-# Getting Started
+**A local agent factory that wraps Claude Code into custom, steerable business agents — designed, built, and managed from a single web console.**
 
-To run this application:
+Project Helm turns off-the-shelf Claude Code into a fleet of purpose-built agents. Each agent has its own system prompt, allowed-tool set, reusable tools, messaging gateways (Telegram), and cron "heartbeats". You build and run them all from **HelmConsole**, the web dashboard — either by hand, or by chatting with **helmCaptain**, the operator agent that manages the fleet for you.
+
+![HelmConsole dashboard](docs/dashboard.png)
+
+## The idea
+
+Rather than the GUI calling backend APIs directly, Project Helm dogfoods its own wrapping model: the console is fronted by a wrapped Claude Code instance — **helmCaptain** — that designs and manages the fleet on your behalf. Ask it to _"create an agent that watches Amazon prices and pings me on Telegram"_ and it drafts the system prompt, authors the tools, wires the gateway, and schedules the heartbeat. Deterministic CRUD is still available directly through the console for when you'd rather click than chat.
+
+## Features
+
+- **Agent factory** — create wrapped Claude Code agents, each with a curated system prompt (`CLAUDE.md`), a per-agent allowed-tool list, and a chosen model.
+- **helmCaptain** — an always-present operator agent that reads and writes the fleet through the `helm` CLI (create agents, author tools, assign them, inspect state).
+- **Shared tool library** — author reusable tool scripts (`bash` / `node` / `python3`) once and assign them to many agents. Assigning a tool materializes it into the agent's workspace and documents it in the agent's `CLAUDE.md`.
+- **Telegram gateways** — bind an agent to a BotFather token; a `getUpdates` long-poll loop feeds inbound messages back as agent runs, and the agent replies via the built-in `send-telegram` tool. Sessions can be isolated per chat or shared across the whole agent.
+- **Heartbeats** — cron-scheduled prompts fired into an agent (5-field cron), self-manageable by the agent via the built-in `heartbeat` tool. Target the agent's main session or a specific Telegram chat.
+- **Durable per-agent data plane** — an agent store plus per-session stores that survive workspace rebuilds, with optional cross-session recall.
+
+## Architecture
+
+Everything runs in a single [TanStack Start](https://tanstack.com/start) server process — the "daemon":
+
+- **HelmConsole** — the React dashboard (fleet, tool library, per-agent detail, captain chat).
+- **tRPC API** — server functions the console calls for deterministic CRUD.
+- **SQLite (`.helm/db.sqlite`) via Drizzle ORM** — agents, tools, gateways, chats, heartbeats.
+- **Background runtime** — the heartbeat cron scheduler and one Telegram long-poll loop per gateway, booted once per process.
+- **Claude adapter** — spawns `claude -p --output-format stream-json` per turn, scoped to the agent's workspace, resuming its session.
+
+Per-agent state lives under `.helm/agents/<id>/`:
+
+```
+.helm/agents/<id>/
+  workspace/
+    CLAUDE.md        # the agent's steering (system prompt + tools block)
+    tools/           # materialized executable tools (helm, heartbeat, send-telegram, custom)
+  logs/              # per-run NDJSON transcripts
+  data/
+    store/           # durable agent-wide store
+    sessions/<key>/  # per-conversation session stores
+```
+
+## Tech stack
+
+- **TanStack Start** (full-stack React on Node) + **TanStack Router / Query**
+- **tRPC** for the typed API
+- **better-sqlite3** + **Drizzle ORM** for persistence
+- **Tailwind CSS v4** + **shadcn/ui** (Radix primitives) for the UI
+- **Claude Code CLI** as the agent runtime
+- **Vitest** for tests
+
+## Getting started
+
+### Prerequisites
+
+- **Node.js ≥ 20**
+- **pnpm**
+- **[Claude Code CLI](https://docs.claude.com/en/docs/claude-code)** on your `PATH`, authenticated (`claude` must run). Agents are spawned as `claude` child processes.
+
+### Install & run
 
 ```bash
 pnpm install
-pnpm dev
+pnpm db:migrate   # create / migrate .helm/db.sqlite
+pnpm dev          # start HelmConsole at http://localhost:3000
 ```
 
-# Building For Production
+Open http://localhost:3000, then create your first agent from the dashboard — or open the **helmCaptain** chat and describe the agent you want.
 
-To build this application for production:
+### Build for production
 
 ```bash
 pnpm build
+pnpm preview
 ```
 
-## Testing
+## Scripts
 
-This project uses [Vitest](https://vitest.dev/) for testing. You can run the tests with:
+| Command            | Description                                               |
+| ------------------ | --------------------------------------------------------- |
+| `pnpm dev`         | Start the dev server (HelmConsole + runtime) on port 3000 |
+| `pnpm build`       | Build for production                                      |
+| `pnpm preview`     | Preview the production build                              |
+| `pnpm typecheck`   | Type-check with `tsc --noEmit`                            |
+| `pnpm test`        | Run the Vitest suite                                      |
+| `pnpm db:generate` | Generate a Drizzle migration from the schema              |
+| `pnpm db:migrate`  | Apply migrations to `.helm/db.sqlite`                     |
+| `pnpm db:studio`   | Open Drizzle Studio                                       |
 
-```bash
-pnpm test
+## Project structure
+
+```
+src/
+  routes/            # TanStack Router file-based routes (dashboard, agent detail, tools, API)
+  components/         # dashboard, agent, chat, tools UI + shadcn primitives
+  server/
+    adapter/claude.ts # spawns Claude Code per turn
+    runtime/          # heartbeat scheduler + Telegram gateway pollers
+    gateways/         # Telegram integration
+    trpc/             # tRPC routers (agents, tools, gateways, heartbeats, captain)
+    captain.ts        # helmCaptain scaffolding + steering
+    tools.ts          # tool materialization + CLAUDE.md rendering
+    paths.ts          # .helm filesystem layout
+  db/                 # Drizzle schema + client
+drizzle/             # generated migrations
 ```
 
-## Styling
+## Status
 
-This project uses [Tailwind CSS](https://tailwindcss.com/) for styling.
+This is a **v0** local-first build. Roadmap items include container-mode agents, encrypted secret storage, and cloud deploy ("helmship"). See `initial-plan.md` for the original design notes.
 
-### Removing Tailwind CSS
+## License
 
-If you prefer not to use Tailwind CSS:
-
-1. Remove the demo pages in `src/routes/demo/`
-2. Replace the Tailwind import in `src/styles.css` with your own styles
-3. Remove `tailwindcss()` from the plugins array in `vite.config.ts`
-4. Uninstall the packages: `pnpm add @tailwindcss/vite tailwindcss --dev`
-
-
-## Shadcn
-
-Add components using the latest version of [Shadcn](https://ui.shadcn.com/).
-
-```bash
-pnpm dlx shadcn@latest add button
-```
-
-
-
-## Routing
-
-This project uses [TanStack Router](https://tanstack.com/router) with file-based routing. Routes are managed as files in `src/routes`.
-
-### Adding A Route
-
-To add a new route to your application just add a new file in the `./src/routes` directory.
-
-TanStack will automatically generate the content of the route file for you.
-
-Now that you have two routes you can use a `Link` component to navigate between them.
-
-### Adding Links
-
-To use SPA (Single Page Application) navigation you will need to import the `Link` component from `@tanstack/react-router`.
-
-```tsx
-import { Link } from "@tanstack/react-router";
-```
-
-Then anywhere in your JSX you can use it like so:
-
-```tsx
-<Link to="/about">About</Link>
-```
-
-This will create a link that will navigate to the `/about` route.
-
-More information on the `Link` component can be found in the [Link documentation](https://tanstack.com/router/v1/docs/framework/react/api/router/linkComponent).
-
-### Using A Layout
-
-In the File Based Routing setup the layout is located in `src/routes/__root.tsx`. Anything you add to the root route will appear in all the routes. The route content will appear in the JSX where you render `{children}` in the `shellComponent`.
-
-Here is an example layout that includes a header:
-
-```tsx
-import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
-
-export const Route = createRootRoute({
-  head: () => ({
-    meta: [
-      { charSet: 'utf-8' },
-      { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-      { title: 'My App' },
-    ],
-  }),
-  shellComponent: ({ children }) => (
-    <html lang="en">
-      <head>
-        <HeadContent />
-      </head>
-      <body>
-        <header>
-          <nav>
-            <Link to="/">Home</Link>
-            <Link to="/about">About</Link>
-          </nav>
-        </header>
-        {children}
-        <Scripts />
-      </body>
-    </html>
-  ),
-})
-```
-
-More information on layouts can be found in the [Layouts documentation](https://tanstack.com/router/latest/docs/framework/react/guide/routing-concepts#layouts).
-
-## Server Functions
-
-TanStack Start provides server functions that allow you to write server-side code that seamlessly integrates with your client components.
-
-```tsx
-import { createServerFn } from '@tanstack/react-start'
-
-const getServerTime = createServerFn({
-  method: 'GET',
-}).handler(async () => {
-  return new Date().toISOString()
-})
-
-// Use in a component
-function MyComponent() {
-  const [time, setTime] = useState('')
-  
-  useEffect(() => {
-    getServerTime().then(setTime)
-  }, [])
-  
-  return <div>Server time: {time}</div>
-}
-```
-
-## API Routes
-
-You can create API routes by using the `server` property in your route definitions:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-import { json } from '@tanstack/react-start'
-
-export const Route = createFileRoute('/api/hello')({
-  server: {
-    handlers: {
-      GET: () => json({ message: 'Hello, World!' }),
-    },
-  },
-})
-```
-
-## Data Fetching
-
-There are multiple ways to fetch data in your application. You can use TanStack Query to fetch data from a server. But you can also use the `loader` functionality built into TanStack Router to load the data for a route before it's rendered.
-
-For example:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-
-export const Route = createFileRoute('/people')({
-  loader: async () => {
-    const response = await fetch('https://swapi.dev/api/people')
-    return response.json()
-  },
-  component: PeopleComponent,
-})
-
-function PeopleComponent() {
-  const data = Route.useLoaderData()
-  return (
-    <ul>
-      {data.results.map((person) => (
-        <li key={person.name}>{person.name}</li>
-      ))}
-    </ul>
-  )
-}
-```
-
-Loaders simplify your data fetching logic dramatically. Check out more information in the [Loader documentation](https://tanstack.com/router/latest/docs/framework/react/guide/data-loading#loader-parameters).
-
-# Demo files
-
-Files prefixed with `demo` can be safely deleted. They are there to provide a starting point for you to play around with the features you've installed.
-
-# Learn More
-
-You can learn more about all of the offerings from TanStack in the [TanStack documentation](https://tanstack.com).
-
-For TanStack Start specific documentation, visit [TanStack Start](https://tanstack.com/start).
+See [LICENSE](LICENSE).

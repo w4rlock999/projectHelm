@@ -1,0 +1,9 @@
+node_modules
+dist
+drizzle
+.helm
+.tanstack
+pnpm-lock.yaml
+
+# Generated files
+**/routeTree.gen.ts
