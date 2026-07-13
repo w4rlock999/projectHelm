@@ -2,7 +2,7 @@ import { createWriteStream, mkdirSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { runClaude } from './adapter/claude.ts'
 import { agentRuntime, loadAgent, updateAgentSessionId } from './agents.ts'
-import { paths } from './paths.ts'
+import { paths, SHARED_SESSION_KEY } from './paths.ts'
 import type { ClaudeEvent } from './adapter/types.ts'
 import type { Agent } from '../db/schema.ts'
 
@@ -36,7 +36,7 @@ export function agentStore(agent: Pick<Agent, 'id' | 'claudeSessionId'>): Sessio
   }
 }
 
-// Per-agent serialization. Headless triggers (heartbeats, inbound connection
+// Per-agent serialization. Headless triggers (heartbeats, inbound gateway
 // messages) can fire concurrently for the same agent; running two `--resume`
 // turns against one Claude session at once corrupts it. We chain each agent's
 // turns through a single in-flight promise so they execute one at a time.
@@ -69,6 +69,11 @@ export function runAgentTurn(
     signal?: AbortSignal
     /** Session to resume/persist. Defaults to the agent's shared session. */
     session?: SessionStore
+    /**
+     * Durable session-store dir key (see resolveSessionKey in runtime/gateways).
+     * Defaults to 'shared' — the agent-scope / console / 'main'-heartbeat session.
+     */
+    sessionKey?: string
     /** Telegram chat this turn belongs to; injected as HELM_CHAT_ID. */
     chatId?: string
     /** Per-event hook (e.g. SSE streaming for the browser chat route). */
@@ -95,6 +100,20 @@ export function runAgentTurn(
     let isError = false
     const signal = opts.signal ?? new AbortController().signal
 
+    // Durable data plane, exposed to the turn's tools as env paths (cwd stays the
+    // shared workspace). The agent store is shared across the agent's sessions;
+    // the session store is per-conversation ('shared' unless the caller passed a
+    // chat key). Per-chat session stores are created here on first use.
+    const storeDir = paths.agentStoreDir(agentId)
+    const sessionStoreDir = paths.agentSessionStoreDir(agentId, opts.sessionKey ?? SHARED_SESSION_KEY)
+    mkdirSync(storeDir, { recursive: true })
+    mkdirSync(sessionStoreDir, { recursive: true })
+    // Cross-session recall is a per-agent authz control (not a caller opt): when
+    // enabled, expose the parent of all session stores so the agent can read
+    // across its own sessions. Under 'none' the var is absent and each turn sees
+    // only its own HELM_SESSION_STORE_DIR.
+    const sessionsRootDir = agent.sessionRecall === 'all' ? paths.agentSessionsDir(agentId) : null
+
     try {
       const { code } = await runClaude({
         // Resume the store's session (per-chat or agent), not whatever the
@@ -102,7 +121,15 @@ export function runAgentTurn(
         agent: { ...agentRuntime(agent), claudeSessionId: session.get() },
         prompt,
         signal,
-        env: opts.chatId ? { HELM_CHAT_ID: opts.chatId } : undefined,
+        env: {
+          HELM_AGENT_STORE_DIR: storeDir,
+          HELM_SESSION_STORE_DIR: sessionStoreDir,
+          // Always set (blank when recall is off) so the agent's DB knob is the
+          // sole source of truth — a stray HELM_SESSIONS_DIR in the daemon's own
+          // environment can't leak cross-session recall to a 'none' agent.
+          HELM_SESSIONS_DIR: sessionsRootDir ?? '',
+          ...(opts.chatId ? { HELM_CHAT_ID: opts.chatId } : {}),
+        },
         onEvent: (evt: ClaudeEvent) => {
           logStream.write(JSON.stringify(evt) + '\n')
           opts.onEvent?.(evt)

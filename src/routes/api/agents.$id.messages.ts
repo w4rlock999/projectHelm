@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { loadAgent } from '../../server/agents.ts'
-import { listAgentChats, sendToChat } from '../../server/runtime/connections.ts'
+import { listAgentChats, sendToChat } from '../../server/runtime/gateways.ts'
 import { ensureRuntimeStarted } from '../../server/runtime/index.ts'
 import type { ApiHandlerCtx, RouteParams } from '../../server/api-route.ts'
 

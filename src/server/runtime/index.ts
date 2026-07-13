@@ -1,4 +1,4 @@
-import { reconcileConnections } from './connections.ts'
+import { reconcileGateways } from './gateways.ts'
 import { startHeartbeatScheduler } from './heartbeats.ts'
 
 /**
@@ -12,8 +12,8 @@ export function ensureRuntimeStarted(): void {
   ;(globalThis as any).__helmRuntimeStarted = true
   try {
     startHeartbeatScheduler()
-    reconcileConnections()
-    console.log('[helm] runtime started (heartbeat scheduler + connection pollers)')
+    reconcileGateways()
+    console.log('[helm] runtime started (heartbeat scheduler + gateway pollers)')
   } catch (err) {
     // Don't wedge request handling if boot hiccups; next request retries.
     ;(globalThis as any).__helmRuntimeStarted = false

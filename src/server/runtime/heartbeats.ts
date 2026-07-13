@@ -5,7 +5,7 @@ import { heartbeats } from '../../db/schema.ts'
 import { cronMatches, isValidCron } from '../cron.ts'
 import { loadAgent } from '../agents.ts'
 import { runAgentTurn } from '../run.ts'
-import { listAgentChats, resolveSessionStore } from './connections.ts'
+import { listAgentChats, resolveSessionKey, resolveSessionStore } from './gateways.ts'
 import type { Heartbeat } from '../../db/schema.ts'
 
 // ── CRUD service (shared by tRPC router + REST route) ───────────────────────
@@ -143,6 +143,7 @@ async function fireHeartbeat(hb: Heartbeat): Promise<void> {
       await runAgentTurn(hb.agentId, hb.prompt, {
         source: `heartbeat:${hb.id}`,
         session: resolveSessionStore(agent, chat),
+        sessionKey: resolveSessionKey(agent, chat),
         chatId: hb.targetChatId,
       })
     } else {

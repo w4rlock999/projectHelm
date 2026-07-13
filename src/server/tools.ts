@@ -8,7 +8,7 @@ import {
 import { randomUUID } from 'node:crypto'
 import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '../db/index.ts'
-import { agents, agentTools, connections, tools } from '../db/schema.ts'
+import { agents, agentTools, gateways, tools } from '../db/schema.ts'
 import { paths } from './paths.ts'
 import type { Tool } from '../db/schema.ts'
 
@@ -134,10 +134,10 @@ export function unassignTool(agentId: string, toolId: string): void {
 
 // ── Materialization ─────────────────────────────────────────────────────────
 
-/** True if the agent has a Telegram connection (so it gets a send-telegram tool). */
-function agentHasConnection(agentId: string): boolean {
+/** True if the agent has a Telegram gateway (so it gets a send-telegram tool). */
+function agentHasGateway(agentId: string): boolean {
   return (
-    db.select().from(connections).where(eq(connections.agentId, agentId)).all().length > 0
+    db.select().from(gateways).where(eq(gateways.agentId, agentId)).all().length > 0
   )
 }
 
@@ -163,8 +163,8 @@ export function materializeAgentTools(agentId: string): void {
   } else {
     // Built-in: heartbeat self-config (always present on regular agents).
     writeExecutable(`${dir}/heartbeat`, heartbeatToolSource(agentId))
-    // Built-in: send-telegram (only when a connection exists).
-    if (agentHasConnection(agentId)) {
+    // Built-in: send-telegram (only when a gateway exists).
+    if (agentHasGateway(agentId)) {
       writeExecutable(`${dir}/send-telegram`, sendTelegramToolSource(agentId))
     }
   }
@@ -196,7 +196,7 @@ export function renderClaudeMd(agentId: string): void {
   if (!agent) return
 
   const custom = listAgentTools(agentId)
-  const hasConnection = agentHasConnection(agentId)
+  const hasGateway = agentHasGateway(agentId)
 
   const lines: string[] = [TOOLS_BLOCK_START, '', '## Tools available to you', '']
   lines.push(
@@ -215,7 +215,7 @@ export function renderClaudeMd(agentId: string): void {
       '```',
       'tools/helm context          # snapshot: all agents + the tool library',
       'tools/helm agent ls         # list agents',
-      "tools/helm agent get <id>   # one agent's full config (prompt, tools, connections, heartbeats)",
+      "tools/helm agent get <id>   # one agent's full config (prompt, tools, gateways, heartbeats)",
       'tools/helm tool ls          # the shared tool library',
       '```',
       'Write commands (creating/configuring agents, authoring tools) are coming next —',
@@ -249,7 +249,7 @@ export function renderClaudeMd(agentId: string): void {
       '',
     )
 
-    if (hasConnection) {
+    if (hasGateway) {
       lines.push('### send-telegram — your voice on Telegram')
       lines.push(
         'This tool is the ONLY way to deliver a message to the user on Telegram.',
@@ -262,9 +262,9 @@ export function renderClaudeMd(agentId: string): void {
         'By default it replies to the chat the current turn belongs to. Use `--chat',
         '<id>` to target a different chat (the `Chat ID` is shown at the top of an',
         'inbound Telegram message).',
-        '**Responding to messages from external connections.** Some turns are not from',
-        'the local console but arrive from an external connection (Telegram). These are',
-        'clearly marked at the top of the prompt with the connection and sender (e.g.',
+        '**Responding to messages from external gateways.** Some turns are not from',
+        'the local console but arrive from an external gateway (Telegram). These are',
+        'clearly marked at the top of the prompt with the gateway and sender (e.g.',
         '`[Inbound message via Telegram]`). When a turn is marked that way, the person',
         'is NOT watching your reply text — you MUST answer them by calling',
         '`send-telegram` (it replies to that same chat by default). Compose your full',
@@ -278,6 +278,44 @@ export function renderClaudeMd(agentId: string): void {
   for (const tool of custom) {
     lines.push(`### ${toolFileName(tool.name)} — ${tool.description}`)
     lines.push('```', `tools/${toolFileName(tool.name)} [args]`, '```', '')
+  }
+
+  lines.push('## Your data')
+  lines.push(
+    'You have two durable stores, provided as environment variables (use them from',
+    'the Bash tool, e.g. `ls "$HELM_SESSION_STORE_DIR"`). They persist across turns',
+    'and survive tool/CLAUDE.md regeneration — unlike the workspace.',
+    '',
+    '- **`$HELM_AGENT_STORE_DIR`** — your agent store, shared across all of your',
+    '  sessions. Keep durable notes, reference material, and artifacts here',
+    '  (e.g. `$HELM_AGENT_STORE_DIR/artifacts/`).',
+    '- **`$HELM_SESSION_STORE_DIR`** — private storage for the current session',
+    '  (conversation) only. Use it for context and memory specific to whoever you',
+    '  are talking to now.',
+    '',
+  )
+  if (agent.sessionRecall === 'all') {
+    lines.push(
+      '- **`$HELM_SESSIONS_DIR`** — a **read-only** view of *all* your session',
+      '  stores (one subdirectory per session; the current one is also your',
+      '  `$HELM_SESSION_STORE_DIR`). Grep across it to recall what happened in your',
+      '  other conversations. Write only to `$HELM_SESSION_STORE_DIR`, never here.',
+      '',
+    )
+  }
+  if (agent.sessionScope === 'chat') {
+    lines.push(
+      agent.sessionRecall === 'all'
+        ? 'Your sessions are separate per chat — each conversation writes to its own ' +
+            '`$HELM_SESSION_STORE_DIR` — but you may *read* across all of them via ' +
+            '`$HELM_SESSIONS_DIR` above.'
+        : 'Your sessions are isolated per chat: each conversation has its own ' +
+            '`$HELM_SESSION_STORE_DIR` and cannot read the others.',
+      'Treat `$HELM_AGENT_STORE_DIR` as **read-only** — anything written there',
+      'becomes visible to every session, so keep private, per-person data in',
+      '`$HELM_SESSION_STORE_DIR`, never in the agent store.',
+      '',
+    )
   }
 
   lines.push(TOOLS_BLOCK_END)
