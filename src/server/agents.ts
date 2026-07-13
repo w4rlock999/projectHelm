@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import { db } from '../db/index.ts'
 import { agents } from '../db/schema.ts'
-import { paths } from './paths.ts'
+import { paths, SHARED_SESSION_KEY } from './paths.ts'
 import { syncAgentTools } from './tools.ts'
 import { DEFAULT_ALLOWED_TOOLS } from './adapter/claude.ts'
 import type { Agent } from '../db/schema.ts'
@@ -21,13 +21,11 @@ export function createAgent(input: CreateAgentInput): Agent {
   const logsDir = paths.agentLogsDir(id)
   mkdirSync(workspaceDir, { recursive: true })
   mkdirSync(logsDir, { recursive: true })
-  // Durable data plane: the agent store (shared) and the 'shared' session store
-  // (used by the agent-scope session, console, and 'main' heartbeats). Per-chat
-  // session stores are created lazily on first turn. ('shared' mirrors
-  // SHARED_SESSION_KEY in runtime/gateways.ts — kept literal here to avoid a
-  // circular import.)
+  // Durable data plane: the agent store (shared) and the SHARED_SESSION_KEY
+  // session store (used by the agent-scope session, console, and 'main'
+  // heartbeats). Per-chat session stores are created lazily on first turn.
   mkdirSync(paths.agentStoreArtifactsDir(id), { recursive: true })
-  mkdirSync(paths.agentSessionStoreArtifactsDir(id, 'shared'), { recursive: true })
+  mkdirSync(paths.agentSessionStoreArtifactsDir(id, SHARED_SESSION_KEY), { recursive: true })
 
   const row = {
     id,

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../db/index.ts'
 import { gateways, gatewaysChat } from '../../db/schema.ts'
+import { SHARED_SESSION_KEY } from '../paths.ts'
 import { syncAgentTools } from '../tools.ts'
 import { loadAgent } from '../agents.ts'
 import { agentStore, runAgentTurn } from '../run.ts'
@@ -146,8 +147,8 @@ export function resolveSessionStore(
   return agent.sessionScope === 'chat' && chat ? chatStore(chat) : agentStore(agent)
 }
 
-/** Session-store key for the agent-scope / console / 'main'-heartbeat session. */
-export const SHARED_SESSION_KEY = 'shared'
+/** Re-exported from paths.ts (the shared home) for callers already importing from here. */
+export { SHARED_SESSION_KEY }
 
 /**
  * Pick the durable session-store directory key for a turn — the data-plane

@@ -2,6 +2,12 @@ import path from 'node:path'
 
 const helmRoot = path.resolve(process.cwd(), '.helm')
 
+// The session-store key for the agent-scope / console / 'main'-heartbeat
+// session (i.e. anything not isolated to a specific chat). Lives here — the
+// leaf module both agents.ts and runtime/gateways.ts already import — so the
+// two can't drift and neither needs a circular import to share it.
+export const SHARED_SESSION_KEY = 'shared'
+
 export const paths = {
   helmRoot,
   dbFile: path.join(helmRoot, 'db.sqlite'),

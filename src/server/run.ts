@@ -2,7 +2,7 @@ import { createWriteStream, mkdirSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { runClaude } from './adapter/claude.ts'
 import { agentRuntime, loadAgent, updateAgentSessionId } from './agents.ts'
-import { paths } from './paths.ts'
+import { paths, SHARED_SESSION_KEY } from './paths.ts'
 import type { ClaudeEvent } from './adapter/types.ts'
 import type { Agent } from '../db/schema.ts'
 
@@ -105,7 +105,7 @@ export function runAgentTurn(
     // the session store is per-conversation ('shared' unless the caller passed a
     // chat key). Per-chat session stores are created here on first use.
     const storeDir = paths.agentStoreDir(agentId)
-    const sessionStoreDir = paths.agentSessionStoreDir(agentId, opts.sessionKey ?? 'shared')
+    const sessionStoreDir = paths.agentSessionStoreDir(agentId, opts.sessionKey ?? SHARED_SESSION_KEY)
     mkdirSync(storeDir, { recursive: true })
     mkdirSync(sessionStoreDir, { recursive: true })
     // Cross-session recall is a per-agent authz control (not a caller opt): when
@@ -124,7 +124,10 @@ export function runAgentTurn(
         env: {
           HELM_AGENT_STORE_DIR: storeDir,
           HELM_SESSION_STORE_DIR: sessionStoreDir,
-          ...(sessionsRootDir ? { HELM_SESSIONS_DIR: sessionsRootDir } : {}),
+          // Always set (blank when recall is off) so the agent's DB knob is the
+          // sole source of truth — a stray HELM_SESSIONS_DIR in the daemon's own
+          // environment can't leak cross-session recall to a 'none' agent.
+          HELM_SESSIONS_DIR: sessionsRootDir ?? '',
           ...(opts.chatId ? { HELM_CHAT_ID: opts.chatId } : {}),
         },
         onEvent: (evt: ClaudeEvent) => {
