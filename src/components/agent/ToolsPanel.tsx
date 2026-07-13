@@ -1,36 +1,36 @@
-import { useState } from 'react'
-import { Link } from '@tanstack/react-router'
-import { Button } from '../ui/button'
-import { ToolDialog } from '../tools/ToolDialog'
-import { trpc, type AgentToolView } from '#/lib/trpc'
+import { useState } from 'react';
+import { Link } from '@tanstack/react-router';
+import { Button } from '../ui/button';
+import { ToolDialog } from '../tools/ToolDialog';
+import { trpc, type AgentToolView } from '#/lib/trpc';
 
 export function ToolsPanel({ agentId }: { agentId: string }) {
-  const utils = trpc.useUtils()
-  const { data: tools } = trpc.tools.forAgent.useQuery({ agentId })
-  const [editing, setEditing] = useState<AgentToolView | null>(null)
-  const [creating, setCreating] = useState(false)
+  const utils = trpc.useUtils();
+  const { data: tools } = trpc.tools.forAgent.useQuery({ agentId });
+  const [editing, setEditing] = useState<AgentToolView | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const invalidate = () => {
-    utils.tools.forAgent.invalidate({ agentId })
-    utils.tools.list.invalidate()
-  }
-  const assignMutation = trpc.tools.assign.useMutation({ onSuccess: invalidate })
-  const unassignMutation = trpc.tools.unassign.useMutation({ onSuccess: invalidate })
-  const toggling = assignMutation.isPending || unassignMutation.isPending
+    utils.tools.forAgent.invalidate({ agentId });
+    utils.tools.list.invalidate();
+  };
+  const assignMutation = trpc.tools.assign.useMutation({ onSuccess: invalidate });
+  const unassignMutation = trpc.tools.unassign.useMutation({ onSuccess: invalidate });
+  const toggling = assignMutation.isPending || unassignMutation.isPending;
 
   function toggle(t: AgentToolView) {
-    if (t.assigned) unassignMutation.mutate({ agentId, toolId: t.id })
-    else assignMutation.mutate({ agentId, toolId: t.id })
+    if (t.assigned) unassignMutation.mutate({ agentId, toolId: t.id });
+    else assignMutation.mutate({ agentId, toolId: t.id });
   }
 
-  const assignedCount = tools?.filter((t) => t.assigned).length ?? 0
+  const assignedCount = tools?.filter((t) => t.assigned).length ?? 0;
 
   return (
     <section className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-medium">Tools</h2>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-muted-foreground text-sm">
             Assign tools from the{' '}
             <Link to="/tools" className="underline">
               shared library
@@ -43,7 +43,7 @@ export function ToolsPanel({ agentId }: { agentId: string }) {
       </div>
 
       {!tools || tools.length === 0 ? (
-        <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+        <p className="text-muted-foreground rounded-md border border-dashed p-6 text-center text-sm">
           The tool library is empty.{' '}
           <button className="underline" onClick={() => setCreating(true)}>
             Create a tool
@@ -63,7 +63,7 @@ export function ToolsPanel({ agentId }: { agentId: string }) {
                 <div className="min-w-0">
                   <p className="font-medium">
                     {t.name}{' '}
-                    <span className="text-xs font-normal text-muted-foreground">
+                    <span className="text-muted-foreground text-xs font-normal">
                       ({t.interpreter})
                     </span>
                     {t.assigned ? (
@@ -72,7 +72,7 @@ export function ToolsPanel({ agentId }: { agentId: string }) {
                       </span>
                     ) : null}
                   </p>
-                  <p className="text-sm text-muted-foreground">{t.description}</p>
+                  <p className="text-muted-foreground text-sm">{t.description}</p>
                 </div>
                 <div className="flex shrink-0 gap-2">
                   <Button
@@ -98,12 +98,12 @@ export function ToolsPanel({ agentId }: { agentId: string }) {
           tool={editing}
           assignToAgentId={creating ? agentId : undefined}
           onClose={() => {
-            setCreating(false)
-            setEditing(null)
+            setCreating(false);
+            setEditing(null);
           }}
           onSaved={invalidate}
         />
       )}
     </section>
-  )
+  );
 }

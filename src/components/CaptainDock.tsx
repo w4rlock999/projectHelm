@@ -1,7 +1,7 @@
-import { Link } from '@tanstack/react-router'
-import { ChevronUp } from 'lucide-react'
-import { cn } from '#/lib/utils'
-import { glass, glassInteractive, monoMeta } from '#/lib/glass'
+import { Link } from '@tanstack/react-router';
+import { ChevronUp } from 'lucide-react';
+import { cn } from '#/lib/utils';
+import { glass, glassInteractive, monoMeta } from '#/lib/glass';
 
 /**
  * The helmCaptain capsule pinned to the bottom-centre of the home page.
@@ -18,7 +18,7 @@ export function CaptainDock() {
       className={cn(
         glass,
         glassInteractive,
-        'group flex w-full items-center gap-3 rounded-full py-3.5 pl-6 pr-3 text-left no-underline',
+        'group flex w-full items-center gap-3 rounded-full py-3.5 pr-3 pl-6 text-left no-underline',
       )}
     >
       <span aria-hidden className="text-lg">
@@ -36,5 +36,5 @@ export function CaptainDock() {
         <ChevronUp className="size-4" />
       </span>
     </Link>
-  )
+  );
 }

@@ -3,16 +3,16 @@
  * `theme-<id>` class on the `.helm-home` root (see styles.css) and persisted
  * to localStorage so it survives reloads.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react';
 
-export type ThemeId = 'ember' | 'atelier' | 'smoked' | 'linen' | 'tide'
+export type ThemeId = 'ember' | 'atelier' | 'smoked' | 'linen' | 'tide';
 
 export interface ThemeMeta {
-  id: ThemeId
-  name: string
-  description: string
+  id: ThemeId;
+  name: string;
+  description: string;
   /** CSS background used for the little preview swatch in the settings dialog. */
-  swatch: string
+  swatch: string;
 }
 
 export const THEMES: ThemeMeta[] = [
@@ -57,18 +57,17 @@ export const THEMES: ThemeMeta[] = [
       'radial-gradient(120% 120% at 15% 0%, rgba(56,189,182,0.85), transparent 55%),' +
       'linear-gradient(155deg,#2d8a8f 0%,#134652 58%,#06141c 100%)',
   },
-]
+];
 
-export const DEFAULT_THEME: ThemeId = 'ember'
-const STORAGE_KEY = 'helm-theme'
+export const DEFAULT_THEME: ThemeId = 'ember';
+const STORAGE_KEY = 'helm-theme';
 
-const isTheme = (v: unknown): v is ThemeId =>
-  THEMES.some((t) => t.id === v)
+const isTheme = (v: unknown): v is ThemeId => THEMES.some((t) => t.id === v);
 
 export function getStoredTheme(): ThemeId {
-  if (typeof window === 'undefined') return DEFAULT_THEME
-  const stored = window.localStorage.getItem(STORAGE_KEY)
-  return isTheme(stored) ? stored : DEFAULT_THEME
+  if (typeof window === 'undefined') return DEFAULT_THEME;
+  const stored = window.localStorage.getItem(STORAGE_KEY);
+  return isTheme(stored) ? stored : DEFAULT_THEME;
 }
 
 /**
@@ -76,18 +75,18 @@ export function getStoredTheme(): ThemeId {
  * and syncs to the stored value once mounted to avoid a hydration mismatch.
  */
 export function useTheme(): [ThemeId, (id: ThemeId) => void] {
-  const [theme, setThemeState] = useState<ThemeId>(DEFAULT_THEME)
+  const [theme, setThemeState] = useState<ThemeId>(DEFAULT_THEME);
 
   useEffect(() => {
-    setThemeState(getStoredTheme())
-  }, [])
+    setThemeState(getStoredTheme());
+  }, []);
 
   const setTheme = useCallback((id: ThemeId) => {
-    setThemeState(id)
+    setThemeState(id);
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEY, id)
+      window.localStorage.setItem(STORAGE_KEY, id);
     }
-  }, [])
+  }, []);
 
-  return [theme, setTheme]
+  return [theme, setTheme];
 }

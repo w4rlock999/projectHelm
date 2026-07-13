@@ -5,16 +5,16 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from './ui/dialog'
-import { cn } from '#/lib/utils'
-import { monoMeta } from '#/lib/glass'
-import { THEMES, type ThemeId } from '#/lib/theme'
+} from './ui/dialog';
+import { cn } from '#/lib/utils';
+import { monoMeta } from '#/lib/glass';
+import { THEMES, type ThemeId } from '#/lib/theme';
 
 interface Props {
-  theme: ThemeId
-  onThemeChange: (id: ThemeId) => void
+  theme: ThemeId;
+  onThemeChange: (id: ThemeId) => void;
   /** Custom trigger element; falls back to a plain "settings" text link. */
-  trigger?: React.ReactNode
+  trigger?: React.ReactNode;
 }
 
 export function SettingsDialog({ theme, onThemeChange, trigger }: Props) {
@@ -53,7 +53,7 @@ export function SettingsDialog({ theme, onThemeChange, trigger }: Props) {
           </p>
           <div className="grid gap-3">
             {THEMES.map((t) => {
-              const active = t.id === theme
+              const active = t.id === theme;
               return (
                 <button
                   key={t.id}
@@ -80,7 +80,7 @@ export function SettingsDialog({ theme, onThemeChange, trigger }: Props) {
                   </span>
                   <span
                     className={cn(
-                      'shrink-0 rounded-full border text-[0.55rem] uppercase tracking-[0.12em] transition-opacity',
+                      'shrink-0 rounded-full border text-[0.55rem] tracking-[0.12em] uppercase transition-opacity',
                       'px-2 py-0.5 font-mono',
                       active
                         ? 'border-white/40 text-[#fbf0e8] opacity-100'
@@ -90,11 +90,11 @@ export function SettingsDialog({ theme, onThemeChange, trigger }: Props) {
                     Active
                   </span>
                 </button>
-              )
+              );
             })}
           </div>
         </div>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

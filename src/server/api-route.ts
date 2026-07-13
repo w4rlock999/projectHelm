@@ -24,9 +24,9 @@
  * server handlers (it's been on the roadmap).
  */
 export type ApiHandlerCtx<TParams = Record<string, string>> = {
-  request: Request
-  params: TParams
-}
+  request: Request;
+  params: TParams;
+};
 
 /**
  * Derive a `{paramName: string}` record from a TanStack route path string.
@@ -36,9 +36,8 @@ export type ApiHandlerCtx<TParams = Record<string, string>> = {
  *   RouteParams<'/foo/$id/$turn/chat'>     → { id: string; turn: string }
  *   RouteParams<'/foo'>                    → Record<string, never>
  */
-export type RouteParams<P extends string> =
-  P extends `${string}$${infer Name}/${infer Rest}`
-    ? { [_ in Name]: string } & RouteParams<Rest>
-    : P extends `${string}$${infer Name}`
-      ? { [_ in Name]: string }
-      : Record<string, never>
+export type RouteParams<P extends string> = P extends `${string}$${infer Name}/${infer Rest}`
+  ? { [_ in Name]: string } & RouteParams<Rest>
+  : P extends `${string}$${infer Name}`
+    ? { [_ in Name]: string }
+    : Record<string, never>;

@@ -17,8 +17,5 @@
   "routerOnly": false,
   "version": 1,
   "framework": "react",
-  "chosenAddOns": [
-    "shadcn",
-    "drizzle"
-  ]
+  "chosenAddOns": ["shadcn", "drizzle"]
 }

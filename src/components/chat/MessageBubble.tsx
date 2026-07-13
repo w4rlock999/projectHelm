@@ -1,42 +1,42 @@
-import { Badge } from '#/components/ui/badge'
-import { cn } from '#/lib/utils'
+import { Badge } from '#/components/ui/badge';
+import { cn } from '#/lib/utils';
 
 export interface TextSegment {
-  type: 'text'
-  text: string
+  type: 'text';
+  text: string;
 }
 
 export interface ToolUseSegment {
-  type: 'tool_use'
-  name: string
-  id: string
-  status: 'running' | 'done'
-  inputJson?: string
+  type: 'tool_use';
+  name: string;
+  id: string;
+  status: 'running' | 'done';
+  inputJson?: string;
 }
 
-export type AssistantSegment = TextSegment | ToolUseSegment
+export type AssistantSegment = TextSegment | ToolUseSegment;
 
 export type ChatMessage =
   | { id: string; role: 'user'; text: string }
   | {
-      id: string
-      role: 'assistant'
+      id: string;
+      role: 'assistant';
       // May contain undefined holes when Claude emits content blocks at
       // non-contiguous indices; MessageBubble filters them out before render.
-      segments: Array<AssistantSegment | undefined>
-      complete: boolean
-      cost?: number
-      durationMs?: number
-    }
+      segments: Array<AssistantSegment | undefined>;
+      complete: boolean;
+      cost?: number;
+      durationMs?: number;
+    };
 
 export function MessageBubble({
   message,
   variant = 'default',
 }: {
-  message: ChatMessage
-  variant?: 'default' | 'glass'
+  message: ChatMessage;
+  variant?: 'default' | 'glass';
 }) {
-  const isGlass = variant === 'glass'
+  const isGlass = variant === 'glass';
 
   if (message.role === 'user') {
     return (
@@ -50,16 +50,16 @@ export function MessageBubble({
           {message.text}
         </div>
       </div>
-    )
+    );
   }
 
-  const visible = message.segments.filter((s): s is AssistantSegment => Boolean(s))
-  const hasContent = visible.length > 0
+  const visible = message.segments.filter((s): s is AssistantSegment => Boolean(s));
+  const hasContent = visible.length > 0;
   return (
     <div className="flex justify-start">
       <div
         className={cn(
-          'max-w-[80%] rounded-lg px-4 py-2 text-sm space-y-2',
+          'max-w-[80%] space-y-2 rounded-lg px-4 py-2 text-sm',
           isGlass ? 'border border-white/10 bg-white/[0.06] text-[var(--warm-ink)]' : 'bg-muted',
         )}
       >
@@ -79,14 +79,17 @@ export function MessageBubble({
                 <p key={i} className="whitespace-pre-wrap">
                   {seg.text}
                   {!message.complete && i === visible.length - 1 ? (
-                    <span className="inline-block w-1.5 h-3 bg-current ml-0.5 animate-pulse align-middle" />
+                    <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-current align-middle" />
                   ) : null}
                 </p>
-              )
+              );
             }
             return (
               <div key={i}>
-                <Badge variant={seg.status === 'done' ? 'secondary' : 'default'} className="gap-1.5">
+                <Badge
+                  variant={seg.status === 'done' ? 'secondary' : 'default'}
+                  className="gap-1.5"
+                >
                   <span className="text-xs">🔧</span>
                   <span>{seg.name}</span>
                   {seg.status === 'running' ? (
@@ -94,13 +97,13 @@ export function MessageBubble({
                   ) : null}
                 </Badge>
               </div>
-            )
+            );
           })
         )}
         {message.complete && typeof message.cost === 'number' ? (
           <p
             className={cn(
-              'text-[10px] pt-1',
+              'pt-1 text-[10px]',
               isGlass ? 'text-[var(--warm-ink-faint)]' : 'text-muted-foreground/70',
             )}
           >
@@ -110,5 +113,5 @@ export function MessageBubble({
         ) : null}
       </div>
     </div>
-  )
+  );
 }

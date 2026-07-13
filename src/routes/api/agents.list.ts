@@ -1,8 +1,8 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { listAgents } from '../../server/agents.ts'
-import { listAgentTools } from '../../server/tools.ts'
-import { listGateways } from '../../server/runtime/gateways.ts'
-import { listHeartbeats } from '../../server/runtime/heartbeats.ts'
+import { createFileRoute } from '@tanstack/react-router';
+import { listAgents } from '../../server/agents.ts';
+import { listAgentTools } from '../../server/tools.ts';
+import { listGateways } from '../../server/runtime/gateways.ts';
+import { listHeartbeats } from '../../server/runtime/heartbeats.ts';
 
 // GET /api/agents/list — the fleet (excludes helmCaptain) with per-agent counts.
 // Read surface for the helm CLI's `agent ls` / `context`. A leaf route (not a
@@ -20,9 +20,9 @@ export const Route = createFileRoute('/api/agents/list')({
           gatewayCount: listGateways(a.id).length,
           heartbeatCount: listHeartbeats(a.id).length,
           createdAt: a.createdAt,
-        }))
-        return Response.json(fleet)
+        }));
+        return Response.json(fleet);
       },
     },
   },
-})
+});

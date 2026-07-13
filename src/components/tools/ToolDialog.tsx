@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Button } from '../ui/button'
+import { useState } from 'react';
+import { Button } from '../ui/button';
 import {
   Dialog,
   DialogContent,
@@ -7,54 +7,54 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '../ui/dialog'
-import { Input } from '../ui/input'
-import { Label } from '../ui/label'
-import { Textarea } from '../ui/textarea'
-import { trpc, type Tool } from '#/lib/trpc'
+} from '../ui/dialog';
+import { Input } from '../ui/input';
+import { Label } from '../ui/label';
+import { Textarea } from '../ui/textarea';
+import { trpc, type Tool } from '#/lib/trpc';
 
-const INTERPRETERS = ['bash', 'sh', 'node', 'python3'] as const
-type Interpreter = (typeof INTERPRETERS)[number]
+const INTERPRETERS = ['bash', 'sh', 'node', 'python3'] as const;
+type Interpreter = (typeof INTERPRETERS)[number];
 
 const PLACEHOLDER: Record<Interpreter, string> = {
   bash: 'echo "hello from $1"',
   sh: 'echo "hello from $1"',
   node: 'console.log("hello from", process.argv[2])',
   python3: 'import sys\nprint("hello from", sys.argv[1] if len(sys.argv) > 1 else "")',
-}
+};
 
 interface Props {
   /** Edit an existing library tool, or null to create a new one. */
-  tool: Tool | null
+  tool: Tool | null;
   /** When creating, also assign the new tool to this agent (author-and-assign). */
-  assignToAgentId?: string
-  onClose: () => void
-  onSaved?: () => void
+  assignToAgentId?: string;
+  onClose: () => void;
+  onSaved?: () => void;
 }
 
 /** Shared create/edit form for a library tool — used by /tools and the agent panel. */
 export function ToolDialog({ tool, assignToAgentId, onClose, onSaved }: Props) {
-  const [name, setName] = useState(tool?.name ?? '')
-  const [description, setDescription] = useState(tool?.description ?? '')
+  const [name, setName] = useState(tool?.name ?? '');
+  const [description, setDescription] = useState(tool?.description ?? '');
   const [interpreter, setInterpreter] = useState<Interpreter>(
     (tool?.interpreter as Interpreter) ?? 'bash',
-  )
-  const [source, setSource] = useState(tool?.source ?? '')
+  );
+  const [source, setSource] = useState(tool?.source ?? '');
 
   const done = () => {
-    onSaved?.()
-    onClose()
-  }
-  const createMutation = trpc.tools.create.useMutation({ onSuccess: done })
-  const updateMutation = trpc.tools.update.useMutation({ onSuccess: done })
-  const busy = createMutation.isPending || updateMutation.isPending
-  const error = createMutation.error?.message ?? updateMutation.error?.message ?? null
+    onSaved?.();
+    onClose();
+  };
+  const createMutation = trpc.tools.create.useMutation({ onSuccess: done });
+  const updateMutation = trpc.tools.update.useMutation({ onSuccess: done });
+  const busy = createMutation.isPending || updateMutation.isPending;
+  const error = createMutation.error?.message ?? updateMutation.error?.message ?? null;
 
   function submit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!name.trim() || !description.trim() || !source.trim()) return
+    e.preventDefault();
+    if (!name.trim() || !description.trim() || !source.trim()) return;
     if (tool) {
-      updateMutation.mutate({ id: tool.id, name, description, interpreter, source })
+      updateMutation.mutate({ id: tool.id, name, description, interpreter, source });
     } else {
       createMutation.mutate({
         name,
@@ -62,7 +62,7 @@ export function ToolDialog({ tool, assignToAgentId, onClose, onSaved }: Props) {
         interpreter,
         source,
         assignTo: assignToAgentId ? [assignToAgentId] : undefined,
-      })
+      });
     }
   }
 
@@ -102,7 +102,7 @@ export function ToolDialog({ tool, assignToAgentId, onClose, onSaved }: Props) {
                   id="tool-interp"
                   value={interpreter}
                   onChange={(e) => setInterpreter(e.target.value as Interpreter)}
-                  className="h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+                  className="border-input h-9 rounded-md border bg-transparent px-3 text-sm shadow-sm"
                 >
                   {INTERPRETERS.map((i) => (
                     <option key={i} value={i}>
@@ -133,12 +133,12 @@ export function ToolDialog({ tool, assignToAgentId, onClose, onSaved }: Props) {
                 required
                 className="font-mono text-xs"
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-muted-foreground text-xs">
                 A shebang is added automatically based on the interpreter (omit it unless you need a
                 specific one).
               </p>
             </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            {error && <p className="text-destructive text-sm">{error}</p>}
           </div>
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
@@ -151,5 +151,5 @@ export function ToolDialog({ tool, assignToAgentId, onClose, onSaved }: Props) {
         </form>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

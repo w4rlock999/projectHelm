@@ -1,8 +1,8 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { fetchRequestHandler } from '@trpc/server/adapters/fetch'
-import { appRouter } from '#/server/trpc/routers/_app'
-import { createContext } from '#/server/trpc/context'
-import type { ApiHandlerCtx } from '#/server/api-route'
+import { createFileRoute } from '@tanstack/react-router';
+import { fetchRequestHandler } from '@trpc/server/adapters/fetch';
+import { appRouter } from '#/server/trpc/routers/_app';
+import { createContext } from '#/server/trpc/context';
+import type { ApiHandlerCtx } from '#/server/api-route';
 
 const handle = ({ request }: ApiHandlerCtx) =>
   fetchRequestHandler({
@@ -10,7 +10,7 @@ const handle = ({ request }: ApiHandlerCtx) =>
     req: request,
     router: appRouter,
     createContext: () => createContext({ req: request }),
-  })
+  });
 
 export const Route = createFileRoute('/api/trpc/$')({
   server: {
@@ -19,4 +19,4 @@ export const Route = createFileRoute('/api/trpc/$')({
       POST: handle,
     },
   },
-})
+});

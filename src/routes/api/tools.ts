@@ -1,8 +1,8 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { assignTool, createLibraryTool, listLibraryTools } from '../../server/tools.ts'
-import { loadAgent } from '../../server/agents.ts'
+import { createFileRoute } from '@tanstack/react-router';
+import { assignTool, createLibraryTool, listLibraryTools } from '../../server/tools.ts';
+import { loadAgent } from '../../server/agents.ts';
 
-const INTERPRETERS = new Set(['bash', 'sh', 'node', 'python3'])
+const INTERPRETERS = new Set(['bash', 'sh', 'node', 'python3']);
 
 // /api/tools — the shared tool library.
 //   GET  → list (read surface for `helm tool ls`)
@@ -23,45 +23,45 @@ export const Route = createFileRoute('/api/tools')({
 
       POST: async ({ request }: { request: Request }) => {
         let body: {
-          name?: string
-          description?: string
-          interpreter?: string
-          source?: string
-          assignTo?: string[]
-        }
+          name?: string;
+          description?: string;
+          interpreter?: string;
+          source?: string;
+          assignTo?: string[];
+        };
         try {
-          body = (await request.json()) as typeof body
+          body = (await request.json()) as typeof body;
         } catch {
-          return Response.json({ error: 'invalid JSON' }, { status: 400 })
+          return Response.json({ error: 'invalid JSON' }, { status: 400 });
         }
         if (!body.name?.trim() || !body.description?.trim() || !body.source?.trim()) {
           return Response.json(
             { error: 'name, description and source are required' },
             { status: 400 },
-          )
+          );
         }
-        const interpreter = body.interpreter?.trim() || 'bash'
+        const interpreter = body.interpreter?.trim() || 'bash';
         if (!INTERPRETERS.has(interpreter)) {
           return Response.json(
             { error: `interpreter must be one of: ${[...INTERPRETERS].join(', ')}` },
             { status: 400 },
-          )
+          );
         }
         const tool = createLibraryTool({
           name: body.name.trim(),
           description: body.description.trim(),
           interpreter,
           source: body.source,
-        })
-        const assignedTo: string[] = []
+        });
+        const assignedTo: string[] = [];
         for (const agentId of body.assignTo ?? []) {
           if (loadAgent(agentId)) {
-            assignTool(agentId, tool.id)
-            assignedTo.push(agentId)
+            assignTool(agentId, tool.id);
+            assignedTo.push(agentId);
           }
         }
-        return Response.json({ ...tool, assignedTo }, { status: 201 })
+        return Response.json({ ...tool, assignedTo }, { status: 201 });
       },
     },
   },
-})
+});

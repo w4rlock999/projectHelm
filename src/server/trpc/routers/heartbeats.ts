@@ -1,24 +1,24 @@
-import { TRPCError } from '@trpc/server'
-import { z } from 'zod'
+import { TRPCError } from '@trpc/server';
+import { z } from 'zod';
 import {
   createHeartbeat,
   deleteHeartbeat,
   listHeartbeats,
   updateHeartbeat,
-} from '../../runtime/heartbeats.ts'
-import { isValidCron } from '../../cron.ts'
-import { publicProcedure, router } from '../init.ts'
+} from '../../runtime/heartbeats.ts';
+import { isValidCron } from '../../cron.ts';
+import { publicProcedure, router } from '../init.ts';
 
 const cronField = z.string().refine(
   (v) => {
     try {
-      return isValidCron(v)
+      return isValidCron(v);
     } catch {
-      return false
+      return false;
     }
   },
   { message: 'invalid 5-field cron expression' },
-)
+);
 
 export const heartbeatsRouter = router({
   list: publicProcedure
@@ -51,16 +51,14 @@ export const heartbeatsRouter = router({
       }),
     )
     .mutation(({ input }) => {
-      const { id, ...patch } = input
-      const updated = updateHeartbeat(id, patch)
-      if (!updated) throw new TRPCError({ code: 'NOT_FOUND' })
-      return updated
+      const { id, ...patch } = input;
+      const updated = updateHeartbeat(id, patch);
+      if (!updated) throw new TRPCError({ code: 'NOT_FOUND' });
+      return updated;
     }),
 
-  delete: publicProcedure
-    .input(z.object({ id: z.string().uuid() }))
-    .mutation(({ input }) => {
-      if (!deleteHeartbeat(input.id)) throw new TRPCError({ code: 'NOT_FOUND' })
-      return { id: input.id }
-    }),
-})
+  delete: publicProcedure.input(z.object({ id: z.string().uuid() })).mutation(({ input }) => {
+    if (!deleteHeartbeat(input.id)) throw new TRPCError({ code: 'NOT_FOUND' });
+    return { id: input.id };
+  }),
+});
