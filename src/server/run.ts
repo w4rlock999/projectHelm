@@ -125,6 +125,9 @@ export function runAgentTurn(
         prompt,
         signal,
         env: {
+          // Identifies the agent to its built-in tools (heartbeat, send-telegram),
+          // which call back into the daemon at /api/agents/<id>/…
+          HELM_AGENT_ID: agentId,
           HELM_AGENT_STORE_DIR: storeDir,
           HELM_SESSION_STORE_DIR: sessionStoreDir,
           // Always set (blank when recall is off) so the agent's DB knob is the
