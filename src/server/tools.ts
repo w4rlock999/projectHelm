@@ -5,10 +5,14 @@ import { db } from '../db/index.ts';
 import { agents, agentTools, gateways, tools } from '../db/schema.ts';
 import { paths } from './paths.ts';
 import type { Tool } from '../db/schema.ts';
-
-// `localhost` (not 127.0.0.1) so the baked tool scripts reach the daemon
-// regardless of whether it binds IPv4 or IPv6 — Node's fetch tries both.
-const BASE_URL = process.env.HELM_BASE_URL ?? 'http://localhost:3000';
+// Built-in tool scripts live as real files under builtin-tools/ and are inlined
+// here as text at build time (Vite `?raw`). They are self-contained standalone
+// scripts run by the agent; per-agent values (HELM_AGENT_ID) and the daemon URL
+// (HELM_BASE_URL) reach them via the environment the daemon spawns the agent
+// with, so no per-agent baking/interpolation is needed.
+import heartbeatToolSource from './builtin-tools/heartbeat.mjs?raw';
+import operatorCliSource from './builtin-tools/helm.mjs?raw';
+import sendTelegramToolSource from './builtin-tools/send-telegram.mjs?raw';
 
 const TOOLS_BLOCK_START = '<!-- helm:tools:start -->';
 const TOOLS_BLOCK_END = '<!-- helm:tools:end -->';
@@ -157,13 +161,13 @@ export function materializeAgentTools(agentId: string): void {
 
   if (agent?.isOperator) {
     // helmCaptain: the helm CLI to inspect the fleet (read-only in part 1).
-    writeExecutable(`${dir}/helm`, operatorCliSource());
+    writeExecutable(`${dir}/helm`, operatorCliSource);
   } else {
     // Built-in: heartbeat self-config (always present on regular agents).
-    writeExecutable(`${dir}/heartbeat`, heartbeatToolSource(agentId));
+    writeExecutable(`${dir}/heartbeat`, heartbeatToolSource);
     // Built-in: send-telegram (only when a gateway exists).
     if (agentHasGateway(agentId)) {
-      writeExecutable(`${dir}/send-telegram`, sendTelegramToolSource(agentId));
+      writeExecutable(`${dir}/send-telegram`, sendTelegramToolSource);
     }
   }
 
@@ -322,253 +326,4 @@ export function renderClaudeMd(agentId: string): void {
   const claudeMd = `${agent.systemPrompt.trim()}\n\n${block}\n`;
   mkdirSync(paths.agentWorkspaceDir(agentId), { recursive: true });
   writeFileSync(paths.agentClaudeMd(agentId), claudeMd);
-}
-
-// ── Built-in tool sources ───────────────────────────────────────────────────
-// Plain CommonJS-compatible Node scripts (global fetch, no imports). Written
-// with string concatenation only — no template literals / `${}` inside — so
-// they embed cleanly here. AGENT_ID and BASE are injected per agent.
-
-function heartbeatToolSource(agentId: string): string {
-  return `#!/usr/bin/env node
-'use strict';
-const AGENT_ID = ${JSON.stringify(agentId)};
-const BASE = ${JSON.stringify(BASE_URL)};
-const argv = process.argv.slice(2);
-const cmd = argv[0];
-
-function flags(args) {
-  const out = {};
-  const pos = [];
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a.indexOf('--') === 0) {
-      const k = a.slice(2);
-      const v = (i + 1 < args.length && args[i + 1].indexOf('--') !== 0) ? args[++i] : 'true';
-      out[k] = v;
-    } else pos.push(a);
-  }
-  return { out, pos };
-}
-
-async function api(method, path, body) {
-  const res = await fetch(BASE + '/api/agents/' + AGENT_ID + path, {
-    method: method,
-    headers: { 'content-type': 'application/json' },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const text = await res.text();
-  if (!res.ok) { console.error('error ' + res.status + ': ' + text); process.exit(1); }
-  return text ? JSON.parse(text) : null;
-}
-
-(async function () {
-  if (cmd === 'list' || !cmd) {
-    const hb = await api('GET', '/heartbeats');
-    console.log(JSON.stringify(hb, null, 2));
-  } else if (cmd === 'add') {
-    const f = flags(argv.slice(1)).out;
-    if (!f.cron || !f.prompt) {
-      console.error('usage: heartbeat add --cron "<expr>" --prompt "<text>" [--name "<name>"] [--target main|chat] [--chat <id>]');
-      process.exit(1);
-    }
-    if (f.target === 'chat' && !f.chat) {
-      console.error('--target chat requires --chat <id>');
-      process.exit(1);
-    }
-    const body = { cron: f.cron, prompt: f.prompt, name: f.name };
-    if (f.target) body.targetType = f.target;
-    if (f.chat) body.targetChatId = f.chat;
-    const r = await api('POST', '/heartbeats', body);
-    console.log('created heartbeat ' + r.id);
-  } else if (cmd === 'update') {
-    const id = argv[1];
-    const f = flags(argv.slice(2)).out;
-    const patch = {};
-    if (f.cron) patch.cron = f.cron;
-    if (f.prompt) patch.prompt = f.prompt;
-    if (f.name) patch.name = f.name;
-    if (f.enabled !== undefined) patch.enabled = f.enabled === 'true';
-    if (f.target) patch.targetType = f.target;
-    if (f.chat) patch.targetChatId = f.chat;
-    await api('PATCH', '/heartbeats/' + id, patch);
-    console.log('updated ' + id);
-  } else if (cmd === 'rm') {
-    await api('DELETE', '/heartbeats/' + argv[1]);
-    console.log('removed ' + argv[1]);
-  } else if (cmd === 'enable' || cmd === 'disable') {
-    await api('PATCH', '/heartbeats/' + argv[1], { enabled: cmd === 'enable' });
-    console.log(cmd + 'd ' + argv[1]);
-  } else {
-    console.error('unknown command: ' + cmd);
-    process.exit(1);
-  }
-})().catch(function (e) { console.error(String(e)); process.exit(1); });
-`;
-}
-
-// The helm CLI (operator-only). Talks to the daemon's REST endpoints; fleet ops
-// need no agent id, only BASE. Read + write commands.
-function operatorCliSource(): string {
-  // Runs as an ES module (the repo's package.json has "type":"module"), so use
-  // a static import for fs rather than require().
-  return `#!/usr/bin/env node
-import { readFileSync } from 'node:fs';
-const BASE = ${JSON.stringify(BASE_URL)};
-const argv = process.argv.slice(2);
-const cmd = argv[0];
-const sub = argv[1];
-
-function flags(args) {
-  const out = {};
-  const pos = [];
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a.indexOf('--') === 0) {
-      const k = a.slice(2);
-      const v = (i + 1 < args.length && args[i + 1].indexOf('--') !== 0) ? args[++i] : 'true';
-      out[k] = v;
-    } else pos.push(a);
-  }
-  return { out: out, pos: pos };
-}
-
-// Resolve --<key> inline, or --<key>-file <path> (preferred for multi-line text).
-function readArg(f, key) {
-  if (f[key] !== undefined) return f[key];
-  if (f[key + '-file'] !== undefined) return readFileSync(f[key + '-file'], 'utf8');
-  return undefined;
-}
-
-async function call(method, path, body) {
-  const res = await fetch(BASE + path, {
-    method: method,
-    headers: body ? { 'content-type': 'application/json' } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const text = await res.text();
-  if (!res.ok) { console.error('error ' + res.status + ': ' + text); process.exit(1); }
-  return text ? JSON.parse(text) : null;
-}
-function get(path) { return call('GET', path); }
-
-function out(v) { console.log(JSON.stringify(v, null, 2)); }
-
-function usage() {
-  console.log(
-    'helm — manage helmConsole\\n' +
-    'read:\\n' +
-    '  helm context\\n' +
-    '  helm agent ls\\n' +
-    '  helm agent get <id>\\n' +
-    '  helm tool ls\\n' +
-    'write:\\n' +
-    '  helm agent new --name <n> --prompt|--prompt-file <p> [--model <m>]\\n' +
-    '  helm agent set-prompt <id> --prompt|--prompt-file <p>\\n' +
-    '  helm agent rm <id>\\n' +
-    '  helm tool author --name <n> --desc <d> --interp <bash|node|python3> --source|--source-file <s> [--assign <agentId>]\\n' +
-    '  helm tool set <id> [--desc <d>] [--source|--source-file <s>] [--interp <i>]\\n' +
-    '  helm tool rm <id>\\n' +
-    '  helm tool assign <toolId> --agent <agentId>\\n' +
-    '  helm tool unassign <toolId> --agent <agentId>'
-  );
-}
-
-(async function () {
-  if (!cmd || cmd === 'help' || cmd === '--help') { usage(); return; }
-
-  if (cmd === 'context') {
-    out({ agents: await get('/api/agents/list'), library: await get('/api/tools') });
-
-  } else if (cmd === 'agent') {
-    if (sub === 'ls') { out(await get('/api/agents/list')); }
-    else if (sub === 'get') {
-      if (!argv[2]) { console.error('usage: helm agent get <id>'); process.exit(1); }
-      out(await get('/api/agents/' + argv[2] + '/info'));
-    } else if (sub === 'new') {
-      const f = flags(argv.slice(2)).out;
-      const prompt = readArg(f, 'prompt');
-      if (!f.name || !prompt) { console.error('usage: helm agent new --name <n> --prompt|--prompt-file <p> [--model <m>]'); process.exit(1); }
-      const r = await call('POST', '/api/agents/create', { name: f.name, systemPrompt: prompt, model: f.model });
-      console.log('created agent ' + r.id);
-    } else if (sub === 'set-prompt') {
-      const id = argv[2];
-      const f = flags(argv.slice(3)).out;
-      const prompt = readArg(f, 'prompt');
-      if (!id || !prompt) { console.error('usage: helm agent set-prompt <id> --prompt|--prompt-file <p>'); process.exit(1); }
-      await call('PATCH', '/api/agents/' + id + '/info', { systemPrompt: prompt });
-      console.log('updated prompt for ' + id);
-    } else if (sub === 'rm') {
-      if (!argv[2]) { console.error('usage: helm agent rm <id>'); process.exit(1); }
-      await call('DELETE', '/api/agents/' + argv[2] + '/info');
-      console.log('removed agent ' + argv[2]);
-    } else { console.error('unknown: helm agent ' + (sub || '')); process.exit(1); }
-
-  } else if (cmd === 'tool') {
-    if (sub === 'ls') { out(await get('/api/tools')); }
-    else if (sub === 'author') {
-      const f = flags(argv.slice(2)).out;
-      const source = readArg(f, 'source');
-      if (!f.name || !f.desc || !source) { console.error('usage: helm tool author --name <n> --desc <d> --interp <i> --source|--source-file <s> [--assign <agentId>]'); process.exit(1); }
-      const body = { name: f.name, description: f.desc, interpreter: f.interp || 'bash', source: source };
-      if (f.assign) body.assignTo = [f.assign];
-      const r = await call('POST', '/api/tools', body);
-      console.log('authored tool ' + r.id + (f.assign ? ' (assigned to ' + f.assign + ')' : ''));
-    } else if (sub === 'set') {
-      const id = argv[2];
-      const f = flags(argv.slice(3)).out;
-      if (!id) { console.error('usage: helm tool set <id> [--desc <d>] [--source|--source-file <s>] [--interp <i>]'); process.exit(1); }
-      const patch = {};
-      if (f.name) patch.name = f.name;
-      if (f.desc) patch.description = f.desc;
-      if (f.interp) patch.interpreter = f.interp;
-      const source = readArg(f, 'source');
-      if (source !== undefined) patch.source = source;
-      await call('PATCH', '/api/tools/' + id, patch);
-      console.log('updated tool ' + id);
-    } else if (sub === 'rm') {
-      if (!argv[2]) { console.error('usage: helm tool rm <id>'); process.exit(1); }
-      await call('DELETE', '/api/tools/' + argv[2]);
-      console.log('removed tool ' + argv[2]);
-    } else if (sub === 'assign' || sub === 'unassign') {
-      const toolId = argv[2];
-      const f = flags(argv.slice(3)).out;
-      if (!toolId || !f.agent) { console.error('usage: helm tool ' + sub + ' <toolId> --agent <agentId>'); process.exit(1); }
-      if (sub === 'assign') { await call('POST', '/api/agents/' + f.agent + '/tools', { toolId: toolId }); console.log('assigned ' + toolId + ' to ' + f.agent); }
-      else { await call('DELETE', '/api/agents/' + f.agent + '/tools/' + toolId); console.log('unassigned ' + toolId + ' from ' + f.agent); }
-    } else { console.error('unknown: helm tool ' + (sub || '')); process.exit(1); }
-
-  } else { console.error('unknown command: ' + cmd); usage(); process.exit(1); }
-})().catch(function (e) { console.error(String(e)); process.exit(1); });
-`;
-}
-
-function sendTelegramToolSource(agentId: string): string {
-  return `#!/usr/bin/env node
-'use strict';
-const AGENT_ID = ${JSON.stringify(agentId)};
-const BASE = ${JSON.stringify(BASE_URL)};
-
-// Parse an optional --chat <id>; everything else joins into the message text.
-const argv = process.argv.slice(2);
-let chatId = process.env.HELM_CHAT_ID || undefined;
-const parts = [];
-for (let i = 0; i < argv.length; i++) {
-  if (argv[i] === '--chat') { chatId = argv[++i]; continue; }
-  parts.push(argv[i]);
-}
-const text = parts.join(' ').trim();
-if (!text) { console.error('usage: send-telegram [--chat <id>] "<message>"'); process.exit(1); }
-
-(async function () {
-  const res = await fetch(BASE + '/api/agents/' + AGENT_ID + '/messages', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ text: text, chatId: chatId }),
-  });
-  const t = await res.text();
-  if (!res.ok) { console.error('send failed ' + res.status + ': ' + t); process.exit(1); }
-  console.log('sent');
-})().catch(function (e) { console.error(String(e)); process.exit(1); });
-`;
 }
