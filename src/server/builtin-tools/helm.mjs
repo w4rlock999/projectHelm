@@ -6,6 +6,8 @@
 // a static import for fs rather than require().
 import { readFileSync } from 'node:fs';
 const BASE = process.env.HELM_BASE_URL || 'http://localhost:3000';
+// Set by the daemon in headless mode; the /api surface requires auth there.
+const TOKEN = process.env.HELM_INTERNAL_TOKEN || '';
 const argv = process.argv.slice(2);
 const cmd = argv[0];
 const sub = argv[1];
@@ -32,9 +34,12 @@ function readArg(f, key) {
 }
 
 async function call(method, path, body) {
+  const headers = {};
+  if (body) headers['content-type'] = 'application/json';
+  if (TOKEN) headers.authorization = 'Bearer ' + TOKEN;
   const res = await fetch(BASE + path, {
     method: method,
-    headers: body ? { 'content-type': 'application/json' } : undefined,
+    headers: headers,
     body: body ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
@@ -60,6 +65,8 @@ function usage() {
       '  helm agent ls\n' +
       '  helm agent get <id>\n' +
       '  helm tool ls\n' +
+      '  helm remote ls\n' +
+      '  helm remote ping <id>\n' +
       'write:\n' +
       '  helm agent new --name <n> --prompt|--prompt-file <p> [--model <m>]\n' +
       '  helm agent set-prompt <id> --prompt|--prompt-file <p>\n' +
@@ -68,7 +75,10 @@ function usage() {
       '  helm tool set <id> [--desc <d>] [--source|--source-file <s>] [--interp <i>]\n' +
       '  helm tool rm <id>\n' +
       '  helm tool assign <toolId> --agent <agentId>\n' +
-      '  helm tool unassign <toolId> --agent <agentId>',
+      '  helm tool unassign <toolId> --agent <agentId>\n' +
+      '  helm remote add --code <helm-connect:...> [--name <n>]\n' +
+      '  helm remote add --ssh <user@host[:port]> --token <t> [--port <helmPort>] [--name <n>]\n' +
+      '  helm remote rm <id>',
   );
 }
 
@@ -184,6 +194,46 @@ function usage() {
       }
     } else {
       console.error('unknown: helm tool ' + (sub || ''));
+      process.exit(1);
+    }
+  } else if (cmd === 'remote') {
+    if (sub === 'ls') {
+      out(await get('/api/remotes'));
+    } else if (sub === 'add') {
+      const f = flags(argv.slice(2)).out;
+      const body = {};
+      if (f.code) {
+        body.connectCode = f.code;
+      } else if (f.ssh && f.token) {
+        body.sshTarget = f.ssh;
+        body.token = f.token;
+        if (f.port) body.helmPort = Number(f.port);
+      } else {
+        console.error(
+          'usage: helm remote add --code <helm-connect:...> [--name <n>]\n' +
+            '       helm remote add --ssh <user@host[:port]> --token <t> [--port <helmPort>] [--name <n>]',
+        );
+        process.exit(1);
+      }
+      if (f.name) body.name = f.name;
+      const r = await call('POST', '/api/remotes', body);
+      console.log('added remote ' + r.remote.id + ' (' + r.remote.name + ')');
+      out(r.info);
+    } else if (sub === 'ping') {
+      if (!argv[2]) {
+        console.error('usage: helm remote ping <id>');
+        process.exit(1);
+      }
+      out(await call('POST', '/api/remotes/' + argv[2] + '/ping'));
+    } else if (sub === 'rm') {
+      if (!argv[2]) {
+        console.error('usage: helm remote rm <id>');
+        process.exit(1);
+      }
+      await call('DELETE', '/api/remotes/' + argv[2]);
+      console.log('removed remote ' + argv[2]);
+    } else {
+      console.error('unknown: helm remote ' + (sub || ''));
       process.exit(1);
     }
   } else {

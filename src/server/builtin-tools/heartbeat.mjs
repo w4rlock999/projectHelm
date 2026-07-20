@@ -5,6 +5,8 @@
 // AGENT_ID and BASE come from the environment the daemon spawns the agent with.
 const AGENT_ID = process.env.HELM_AGENT_ID;
 const BASE = process.env.HELM_BASE_URL || 'http://localhost:3000';
+// Set by the daemon in headless mode; the /api surface requires auth there.
+const TOKEN = process.env.HELM_INTERNAL_TOKEN || '';
 const argv = process.argv.slice(2);
 const cmd = argv[0];
 
@@ -23,9 +25,11 @@ function flags(args) {
 }
 
 async function api(method, path, body) {
+  const headers = { 'content-type': 'application/json' };
+  if (TOKEN) headers.authorization = 'Bearer ' + TOKEN;
   const res = await fetch(BASE + '/api/agents/' + AGENT_ID + path, {
     method: method,
-    headers: { 'content-type': 'application/json' },
+    headers: headers,
     body: body ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();

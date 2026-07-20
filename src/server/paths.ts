@@ -11,6 +11,10 @@ export const SHARED_SESSION_KEY = 'shared';
 export const paths = {
   helmRoot,
   dbFile: path.join(helmRoot, 'db.sqlite'),
+  // Headless-daemon pairing state (written by `pnpm remote:init`): the pairing
+  // token's hash + metadata, and the systemd EnvironmentFile.
+  remoteJson: path.join(helmRoot, 'remote.json'),
+  remoteEnv: path.join(helmRoot, 'remote.env'),
   agentsDir: path.join(helmRoot, 'agents'),
   agentDir: (id: string) => path.join(helmRoot, 'agents', id),
   agentWorkspaceDir: (id: string) => path.join(helmRoot, 'agents', id, 'workspace'),

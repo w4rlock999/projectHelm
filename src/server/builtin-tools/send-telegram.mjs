@@ -6,6 +6,8 @@
 // HELM_CHAT_ID (when present) is the chat the current turn belongs to.
 const AGENT_ID = process.env.HELM_AGENT_ID;
 const BASE = process.env.HELM_BASE_URL || 'http://localhost:3000';
+// Set by the daemon in headless mode; the /api surface requires auth there.
+const TOKEN = process.env.HELM_INTERNAL_TOKEN || '';
 
 // Parse an optional --chat <id>; everything else joins into the message text.
 const argv = process.argv.slice(2);
@@ -25,9 +27,11 @@ if (!text) {
 }
 
 (async function () {
+  const headers = { 'content-type': 'application/json' };
+  if (TOKEN) headers.authorization = 'Bearer ' + TOKEN;
   const res = await fetch(BASE + '/api/agents/' + AGENT_ID + '/messages', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: headers,
     body: JSON.stringify({ text: text, chatId: chatId }),
   });
   const t = await res.text();

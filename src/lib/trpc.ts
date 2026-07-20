@@ -13,3 +13,5 @@ export type AgentToolView = RouterOutputs['tools']['forAgent'][number];
 export type Gateway = RouterOutputs['gateways']['list'][number];
 export type GatewayChat = RouterOutputs['gateways']['chats'][number];
 export type Heartbeat = RouterOutputs['heartbeats']['list'][number];
+export type Remote = RouterOutputs['remotes']['list'][number];
+export type RemotePing = RouterOutputs['remotes']['ping'];

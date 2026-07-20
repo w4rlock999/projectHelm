@@ -50,6 +50,13 @@
       "when": 1783793628031,
       "tag": "0006_youthful_hydra",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1784273690677,
+      "tag": "0007_broad_shadow_king",
+      "breakpoints": true
     }
   ]
 }
