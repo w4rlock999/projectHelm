@@ -10,14 +10,19 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ToolsRouteImport } from './routes/tools'
+import { Route as RemotesRouteImport } from './routes/remotes'
 import { Route as CaptainRouteImport } from './routes/captain'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiToolsRouteImport } from './routes/api/tools'
+import { Route as ApiRemotesRouteImport } from './routes/api/remotes'
 import { Route as AgentsIdRouteImport } from './routes/agents.$id'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api/trpc.$'
 import { Route as ApiToolsIdRouteImport } from './routes/api/tools.$id'
+import { Route as ApiRemotesIdRouteImport } from './routes/api/remotes.$id'
+import { Route as ApiRemoteInfoRouteImport } from './routes/api/remote.info'
 import { Route as ApiAgentsListRouteImport } from './routes/api/agents.list'
 import { Route as ApiAgentsCreateRouteImport } from './routes/api/agents.create'
+import { Route as ApiRemotesIdPingRouteImport } from './routes/api/remotes_.$id.ping'
 import { Route as ApiAgentsIdToolsRouteImport } from './routes/api/agents.$id.tools'
 import { Route as ApiAgentsIdMessagesRouteImport } from './routes/api/agents.$id.messages'
 import { Route as ApiAgentsIdInfoRouteImport } from './routes/api/agents.$id.info'
@@ -29,6 +34,11 @@ import { Route as ApiAgentsIdHeartbeatsHbIdRouteImport } from './routes/api/agen
 const ToolsRoute = ToolsRouteImport.update({
   id: '/tools',
   path: '/tools',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RemotesRoute = RemotesRouteImport.update({
+  id: '/remotes',
+  path: '/remotes',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CaptainRoute = CaptainRouteImport.update({
@@ -46,6 +56,11 @@ const ApiToolsRoute = ApiToolsRouteImport.update({
   path: '/api/tools',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiRemotesRoute = ApiRemotesRouteImport.update({
+  id: '/api/remotes',
+  path: '/api/remotes',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AgentsIdRoute = AgentsIdRouteImport.update({
   id: '/agents/$id',
   path: '/agents/$id',
@@ -61,6 +76,16 @@ const ApiToolsIdRoute = ApiToolsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => ApiToolsRoute,
 } as any)
+const ApiRemotesIdRoute = ApiRemotesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ApiRemotesRoute,
+} as any)
+const ApiRemoteInfoRoute = ApiRemoteInfoRouteImport.update({
+  id: '/api/remote/info',
+  path: '/api/remote/info',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAgentsListRoute = ApiAgentsListRouteImport.update({
   id: '/api/agents/list',
   path: '/api/agents/list',
@@ -69,6 +94,11 @@ const ApiAgentsListRoute = ApiAgentsListRouteImport.update({
 const ApiAgentsCreateRoute = ApiAgentsCreateRouteImport.update({
   id: '/api/agents/create',
   path: '/api/agents/create',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRemotesIdPingRoute = ApiRemotesIdPingRouteImport.update({
+  id: '/api/remotes_/$id/ping',
+  path: '/api/remotes/$id/ping',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAgentsIdToolsRoute = ApiAgentsIdToolsRouteImport.update({
@@ -111,11 +141,15 @@ const ApiAgentsIdHeartbeatsHbIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/captain': typeof CaptainRoute
+  '/remotes': typeof RemotesRoute
   '/tools': typeof ToolsRoute
   '/agents/$id': typeof AgentsIdRoute
+  '/api/remotes': typeof ApiRemotesRouteWithChildren
   '/api/tools': typeof ApiToolsRouteWithChildren
   '/api/agents/create': typeof ApiAgentsCreateRoute
   '/api/agents/list': typeof ApiAgentsListRoute
+  '/api/remote/info': typeof ApiRemoteInfoRoute
+  '/api/remotes/$id': typeof ApiRemotesIdRoute
   '/api/tools/$id': typeof ApiToolsIdRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/api/agents/$id/chat': typeof ApiAgentsIdChatRoute
@@ -123,17 +157,22 @@ export interface FileRoutesByFullPath {
   '/api/agents/$id/info': typeof ApiAgentsIdInfoRoute
   '/api/agents/$id/messages': typeof ApiAgentsIdMessagesRoute
   '/api/agents/$id/tools': typeof ApiAgentsIdToolsRouteWithChildren
+  '/api/remotes/$id/ping': typeof ApiRemotesIdPingRoute
   '/api/agents/$id/heartbeats/$hbId': typeof ApiAgentsIdHeartbeatsHbIdRoute
   '/api/agents/$id/tools/$toolId': typeof ApiAgentsIdToolsToolIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/captain': typeof CaptainRoute
+  '/remotes': typeof RemotesRoute
   '/tools': typeof ToolsRoute
   '/agents/$id': typeof AgentsIdRoute
+  '/api/remotes': typeof ApiRemotesRouteWithChildren
   '/api/tools': typeof ApiToolsRouteWithChildren
   '/api/agents/create': typeof ApiAgentsCreateRoute
   '/api/agents/list': typeof ApiAgentsListRoute
+  '/api/remote/info': typeof ApiRemoteInfoRoute
+  '/api/remotes/$id': typeof ApiRemotesIdRoute
   '/api/tools/$id': typeof ApiToolsIdRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/api/agents/$id/chat': typeof ApiAgentsIdChatRoute
@@ -141,6 +180,7 @@ export interface FileRoutesByTo {
   '/api/agents/$id/info': typeof ApiAgentsIdInfoRoute
   '/api/agents/$id/messages': typeof ApiAgentsIdMessagesRoute
   '/api/agents/$id/tools': typeof ApiAgentsIdToolsRouteWithChildren
+  '/api/remotes/$id/ping': typeof ApiRemotesIdPingRoute
   '/api/agents/$id/heartbeats/$hbId': typeof ApiAgentsIdHeartbeatsHbIdRoute
   '/api/agents/$id/tools/$toolId': typeof ApiAgentsIdToolsToolIdRoute
 }
@@ -148,11 +188,15 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/captain': typeof CaptainRoute
+  '/remotes': typeof RemotesRoute
   '/tools': typeof ToolsRoute
   '/agents/$id': typeof AgentsIdRoute
+  '/api/remotes': typeof ApiRemotesRouteWithChildren
   '/api/tools': typeof ApiToolsRouteWithChildren
   '/api/agents/create': typeof ApiAgentsCreateRoute
   '/api/agents/list': typeof ApiAgentsListRoute
+  '/api/remote/info': typeof ApiRemoteInfoRoute
+  '/api/remotes/$id': typeof ApiRemotesIdRoute
   '/api/tools/$id': typeof ApiToolsIdRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/api/agents/$id/chat': typeof ApiAgentsIdChatRoute
@@ -160,6 +204,7 @@ export interface FileRoutesById {
   '/api/agents/$id/info': typeof ApiAgentsIdInfoRoute
   '/api/agents/$id/messages': typeof ApiAgentsIdMessagesRoute
   '/api/agents/$id/tools': typeof ApiAgentsIdToolsRouteWithChildren
+  '/api/remotes_/$id/ping': typeof ApiRemotesIdPingRoute
   '/api/agents/$id/heartbeats/$hbId': typeof ApiAgentsIdHeartbeatsHbIdRoute
   '/api/agents/$id/tools/$toolId': typeof ApiAgentsIdToolsToolIdRoute
 }
@@ -168,11 +213,15 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/captain'
+    | '/remotes'
     | '/tools'
     | '/agents/$id'
+    | '/api/remotes'
     | '/api/tools'
     | '/api/agents/create'
     | '/api/agents/list'
+    | '/api/remote/info'
+    | '/api/remotes/$id'
     | '/api/tools/$id'
     | '/api/trpc/$'
     | '/api/agents/$id/chat'
@@ -180,17 +229,22 @@ export interface FileRouteTypes {
     | '/api/agents/$id/info'
     | '/api/agents/$id/messages'
     | '/api/agents/$id/tools'
+    | '/api/remotes/$id/ping'
     | '/api/agents/$id/heartbeats/$hbId'
     | '/api/agents/$id/tools/$toolId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/captain'
+    | '/remotes'
     | '/tools'
     | '/agents/$id'
+    | '/api/remotes'
     | '/api/tools'
     | '/api/agents/create'
     | '/api/agents/list'
+    | '/api/remote/info'
+    | '/api/remotes/$id'
     | '/api/tools/$id'
     | '/api/trpc/$'
     | '/api/agents/$id/chat'
@@ -198,17 +252,22 @@ export interface FileRouteTypes {
     | '/api/agents/$id/info'
     | '/api/agents/$id/messages'
     | '/api/agents/$id/tools'
+    | '/api/remotes/$id/ping'
     | '/api/agents/$id/heartbeats/$hbId'
     | '/api/agents/$id/tools/$toolId'
   id:
     | '__root__'
     | '/'
     | '/captain'
+    | '/remotes'
     | '/tools'
     | '/agents/$id'
+    | '/api/remotes'
     | '/api/tools'
     | '/api/agents/create'
     | '/api/agents/list'
+    | '/api/remote/info'
+    | '/api/remotes/$id'
     | '/api/tools/$id'
     | '/api/trpc/$'
     | '/api/agents/$id/chat'
@@ -216,6 +275,7 @@ export interface FileRouteTypes {
     | '/api/agents/$id/info'
     | '/api/agents/$id/messages'
     | '/api/agents/$id/tools'
+    | '/api/remotes_/$id/ping'
     | '/api/agents/$id/heartbeats/$hbId'
     | '/api/agents/$id/tools/$toolId'
   fileRoutesById: FileRoutesById
@@ -223,17 +283,21 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CaptainRoute: typeof CaptainRoute
+  RemotesRoute: typeof RemotesRoute
   ToolsRoute: typeof ToolsRoute
   AgentsIdRoute: typeof AgentsIdRoute
+  ApiRemotesRoute: typeof ApiRemotesRouteWithChildren
   ApiToolsRoute: typeof ApiToolsRouteWithChildren
   ApiAgentsCreateRoute: typeof ApiAgentsCreateRoute
   ApiAgentsListRoute: typeof ApiAgentsListRoute
+  ApiRemoteInfoRoute: typeof ApiRemoteInfoRoute
   ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
   ApiAgentsIdChatRoute: typeof ApiAgentsIdChatRoute
   ApiAgentsIdHeartbeatsRoute: typeof ApiAgentsIdHeartbeatsRouteWithChildren
   ApiAgentsIdInfoRoute: typeof ApiAgentsIdInfoRoute
   ApiAgentsIdMessagesRoute: typeof ApiAgentsIdMessagesRoute
   ApiAgentsIdToolsRoute: typeof ApiAgentsIdToolsRouteWithChildren
+  ApiRemotesIdPingRoute: typeof ApiRemotesIdPingRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -243,6 +307,13 @@ declare module '@tanstack/react-router' {
       path: '/tools'
       fullPath: '/tools'
       preLoaderRoute: typeof ToolsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/remotes': {
+      id: '/remotes'
+      path: '/remotes'
+      fullPath: '/remotes'
+      preLoaderRoute: typeof RemotesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/captain': {
@@ -266,6 +337,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiToolsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/remotes': {
+      id: '/api/remotes'
+      path: '/api/remotes'
+      fullPath: '/api/remotes'
+      preLoaderRoute: typeof ApiRemotesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/agents/$id': {
       id: '/agents/$id'
       path: '/agents/$id'
@@ -287,6 +365,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiToolsIdRouteImport
       parentRoute: typeof ApiToolsRoute
     }
+    '/api/remotes/$id': {
+      id: '/api/remotes/$id'
+      path: '/$id'
+      fullPath: '/api/remotes/$id'
+      preLoaderRoute: typeof ApiRemotesIdRouteImport
+      parentRoute: typeof ApiRemotesRoute
+    }
+    '/api/remote/info': {
+      id: '/api/remote/info'
+      path: '/api/remote/info'
+      fullPath: '/api/remote/info'
+      preLoaderRoute: typeof ApiRemoteInfoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/agents/list': {
       id: '/api/agents/list'
       path: '/api/agents/list'
@@ -299,6 +391,13 @@ declare module '@tanstack/react-router' {
       path: '/api/agents/create'
       fullPath: '/api/agents/create'
       preLoaderRoute: typeof ApiAgentsCreateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/remotes_/$id/ping': {
+      id: '/api/remotes_/$id/ping'
+      path: '/api/remotes/$id/ping'
+      fullPath: '/api/remotes/$id/ping'
+      preLoaderRoute: typeof ApiRemotesIdPingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/agents/$id/tools': {
@@ -353,6 +452,18 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface ApiRemotesRouteChildren {
+  ApiRemotesIdRoute: typeof ApiRemotesIdRoute
+}
+
+const ApiRemotesRouteChildren: ApiRemotesRouteChildren = {
+  ApiRemotesIdRoute: ApiRemotesIdRoute,
+}
+
+const ApiRemotesRouteWithChildren = ApiRemotesRoute._addFileChildren(
+  ApiRemotesRouteChildren,
+)
+
 interface ApiToolsRouteChildren {
   ApiToolsIdRoute: typeof ApiToolsIdRoute
 }
@@ -392,17 +503,21 @@ const ApiAgentsIdToolsRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CaptainRoute: CaptainRoute,
+  RemotesRoute: RemotesRoute,
   ToolsRoute: ToolsRoute,
   AgentsIdRoute: AgentsIdRoute,
+  ApiRemotesRoute: ApiRemotesRouteWithChildren,
   ApiToolsRoute: ApiToolsRouteWithChildren,
   ApiAgentsCreateRoute: ApiAgentsCreateRoute,
   ApiAgentsListRoute: ApiAgentsListRoute,
+  ApiRemoteInfoRoute: ApiRemoteInfoRoute,
   ApiTrpcSplatRoute: ApiTrpcSplatRoute,
   ApiAgentsIdChatRoute: ApiAgentsIdChatRoute,
   ApiAgentsIdHeartbeatsRoute: ApiAgentsIdHeartbeatsRouteWithChildren,
   ApiAgentsIdInfoRoute: ApiAgentsIdInfoRoute,
   ApiAgentsIdMessagesRoute: ApiAgentsIdMessagesRoute,
   ApiAgentsIdToolsRoute: ApiAgentsIdToolsRouteWithChildren,
+  ApiRemotesIdPingRoute: ApiRemotesIdPingRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

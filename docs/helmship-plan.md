@@ -1,6 +1,6 @@
 # Helmship — remote deployment plan
 
-_Drafted 2026-07-13. Status: agreed direction; M-remote-1 is the next build target._
+_Drafted 2026-07-13. Status: **M-remote-1 implemented** (2026-07-17); M-remote-2 is the next build target._
 
 Helmship lets you take an agent built locally in HelmConsole and deploy it to a
 "remote deployment environment" — a VPS running the helm daemon headlessly —
@@ -59,10 +59,15 @@ shipping yet.
   **shown once**; only its SHA-256 hash is stored in `.helm/remote.json`
   (`{ tokenHash, createdAt, helmVersion }`).
 - Every `/api/trpc/*` and `/api/*` request must carry
-  `Authorization: Bearer <token>`. Enforcement points:
-  - tRPC: check in `src/server/trpc/context.ts` (throw `UNAUTHORIZED`).
-  - REST file routes: a `requireRemoteAuth(request)` helper in
-    `src/server/api-route.ts`, called at the top of each handler.
+  `Authorization: Bearer <token>`. Enforcement point (decided during
+  implementation, superseding per-handler checks): the **custom server entry**
+  `src/server.ts` — every request in dev/preview/prod flows through its fetch
+  handler, so one check covers tRPC + all REST routes + anything added later.
+  SPA assets are served before the entry and stay reachable.
+- A second token is accepted alongside the pairing token: a per-process
+  **internal token** (`HELM_INTERNAL_TOKEN`, never persisted) injected into
+  spawned agents so their materialized tool scripts (helm/heartbeat/
+  send-telegram) can call back into the daemon.
 - Local (non-headless) mode is unchanged — no token required.
 - Rotation: re-running init with `--rotate` issues a new token and invalidates
   the old hash. No multi-token/scoping in v1.

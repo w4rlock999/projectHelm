@@ -209,19 +209,19 @@ export function renderClaudeMd(agentId: string): void {
   );
 
   if (agent.isOperator) {
-    lines.push('### helm — inspect helmConsole (read-only for now)');
+    lines.push('### helm — manage helmConsole');
     lines.push(
-      'Run these via Bash to see the live state of the fleet and the tool library.',
-      'Always check live state with `helm` before answering questions about agents —',
-      'never guess.',
+      'Run these via Bash to read and write the live state of the fleet, the tool',
+      'library, and registered remotes. Always check live state with `helm` before',
+      'answering questions about agents — never guess. Run `tools/helm help` for',
+      'the full command list (agent/tool/remote read + write commands).',
       '```',
       'tools/helm context          # snapshot: all agents + the tool library',
       'tools/helm agent ls         # list agents',
       "tools/helm agent get <id>   # one agent's full config (prompt, tools, gateways, heartbeats)",
       'tools/helm tool ls          # the shared tool library',
+      'tools/helm remote ls        # registered remote deployment environments',
       '```',
-      'Write commands (creating/configuring agents, authoring tools) are coming next —',
-      'you cannot modify anything yet.',
       '',
     );
   } else {

@@ -116,6 +116,31 @@ export const gatewaysChat = sqliteTable(
   (t) => [uniqueIndex('gateway_chat_uq').on(t.gatewayId, t.chatId)],
 );
 
+// A registered remote deployment environment: a VPS running this same helm
+// daemon headlessly (docs/helmship-plan.md). Reached over an SSH tunnel; the
+// pairing token authenticates every request to its /api surface.
+export const remotes = sqliteTable('remotes', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  // 'user@host[:port]' — handed to the system ssh, so ~/.ssh/config, keys and
+  // the agent all apply.
+  sshTarget: text('ssh_target').notNull(),
+  // Port the remote daemon listens on (bound to 127.0.0.1 on the remote).
+  helmPort: integer('helm_port').notNull().default(5555),
+  // Pairing token. Plaintext for v1 (same posture as gateways.token —
+  // encrypt-at-rest is a later milestone).
+  token: text('token').notNull(),
+  lastSeenAt: integer('last_seen_at', { mode: 'timestamp' }),
+  lastVersion: text('last_version'),
+  // Harness capabilities advertised by the last successful handshake.
+  capabilities: text('capabilities', { mode: 'json' }).$type<
+    { type: string; version: string | null; authOk: boolean }[]
+  >(),
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
 // Cron-scheduled prompts fired into the agent by the wrapper. The agent can
 // self-manage these via the built-in `heartbeat` tool.
 export const heartbeats = sqliteTable('heartbeats', {
@@ -148,3 +173,4 @@ export type AgentTool = typeof agentTools.$inferSelect;
 export type Gateway = typeof gateways.$inferSelect;
 export type GatewayChat = typeof gatewaysChat.$inferSelect;
 export type Heartbeat = typeof heartbeats.$inferSelect;
+export type Remote = typeof remotes.$inferSelect;

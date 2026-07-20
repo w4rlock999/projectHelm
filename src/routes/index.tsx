@@ -187,6 +187,15 @@ function Topbar({
         >
           Tool Library
         </Link>
+        <Link
+          to="/remotes"
+          className={cn(
+            monoMeta,
+            'text-[0.65rem] text-[var(--warm-ink-soft)] no-underline transition-colors hover:text-[var(--warm-ink)]',
+          )}
+        >
+          Remotes
+        </Link>
         <SettingsDialog theme={theme} onThemeChange={onThemeChange} />
         <Clock />
       </div>

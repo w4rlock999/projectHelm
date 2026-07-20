@@ -2,7 +2,9 @@ import { createWriteStream, mkdirSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { runClaude } from './adapter/claude.ts';
 import { agentRuntime, loadAgent, updateAgentSessionId } from './agents.ts';
+import { config } from './config.ts';
 import { paths, SHARED_SESSION_KEY } from './paths.ts';
+import { getInternalToken } from './remote-auth.ts';
 import type { ClaudeEvent } from './adapter/types.ts';
 import type { Agent } from '../db/schema.ts';
 
@@ -128,6 +130,12 @@ export function runAgentTurn(
           // Identifies the agent to its built-in tools (heartbeat, send-telegram),
           // which call back into the daemon at /api/agents/<id>/…
           HELM_AGENT_ID: agentId,
+          // Where those tool scripts reach the daemon (their default is
+          // localhost:3000). In headless mode the /api surface requires auth,
+          // so agents also get the per-process internal token — local mode
+          // stays token-free (unchanged behavior).
+          HELM_BASE_URL: config.baseUrl,
+          ...(config.headless ? { HELM_INTERNAL_TOKEN: getInternalToken() } : {}),
           HELM_AGENT_STORE_DIR: storeDir,
           HELM_SESSION_STORE_DIR: sessionStoreDir,
           // Always set (blank when recall is off) so the agent's DB knob is the

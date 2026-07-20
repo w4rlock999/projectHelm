@@ -1,0 +1,20 @@
+# systemd unit for the headless helm daemon. Rendered and installed by
+# `pnpm remote:init` ({{USER}}, {{APP_DIR}}, {{NODE_BIN}} are substituted).
+# WorkingDirectory matters: the daemon roots its .helm/ state at cwd.
+
+[Unit]
+Description=Helm remote daemon (headless HelmConsole)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{USER}}
+WorkingDirectory={{APP_DIR}}
+EnvironmentFile={{APP_DIR}}/.helm/remote.env
+ExecStart={{NODE_BIN}} {{APP_DIR}}/scripts/serve.mjs
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
