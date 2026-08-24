@@ -39,12 +39,20 @@ export function createAgent(input: CreateAgentInput): Agent {
     // ...and to no cross-session recall (each session is context-isolated).
     sessionRecall: 'none' as const,
     isOperator: false,
+    // Locally live and unbudgeted until a ship or an explicit budget says
+    // otherwise. Spelled out rather than left to the column defaults because
+    // this object is returned to the caller as the created Agent.
+    deployedTo: null,
+    deployState: null,
+    deployedAt: null,
+    deployError: null,
+    runBudgetPerHour: null,
     createdAt: new Date(),
   };
   db.insert(agents).values(row).run();
   // Materializes built-in tools (heartbeat) + writes CLAUDE.md with the tools block.
   syncAgentTools(id);
-  return row as Agent;
+  return row;
 }
 
 /** The user-facing fleet — excludes the operator (helmCaptain). */

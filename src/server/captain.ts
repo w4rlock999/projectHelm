@@ -105,6 +105,13 @@ export function ensureHelmCaptain(): Agent {
     // Single session, so cross-session recall is moot — keep it off.
     sessionRecall: 'none',
     isOperator: true,
+    // The captain is a per-install singleton and is never shippable — it stays
+    // locally live, unbudgeted, on whichever daemon created it.
+    deployedTo: null,
+    deployState: null,
+    deployedAt: null,
+    deployError: null,
+    runBudgetPerHour: null,
     createdAt: new Date(),
   };
   db.insert(agents).values(row).run();

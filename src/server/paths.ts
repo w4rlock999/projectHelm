@@ -15,6 +15,24 @@ export const paths = {
   // token's hash + metadata, and the systemd EnvironmentFile.
   remoteJson: path.join(helmRoot, 'remote.json'),
   remoteEnv: path.join(helmRoot, 'remote.env'),
+  // ── Transfer scratch (helmship M-remote-2) ───────────────────────────────
+  // Everything here lives under .helm/ deliberately: staging hardlinks into a
+  // bundle and installing an import with a single renameSync both require the
+  // same filesystem as .helm/agents. /tmp is a separate volume on macOS and
+  // often a tmpfs on a systemd VPS, so it cannot be used.
+  //
+  // Created 0700 and files 0600: a bundle contains gateways.token in plaintext.
+  tmpDir: path.join(helmRoot, 'tmp'),
+  bundlesDir: path.join(helmRoot, 'tmp', 'bundles'),
+  /** A bundle being written for upload. */
+  bundleFile: (id: string) => path.join(helmRoot, 'tmp', 'bundles', `${id}.helm.tgz`),
+  /** A bundle being spooled off the wire, before it is trusted. */
+  incomingBundle: (id: string) => path.join(helmRoot, 'tmp', 'incoming', `${id}.tgz`),
+  /** Mirror tree assembled by export, then handed to `tar`. */
+  bundleStageDir: (id: string) => path.join(helmRoot, 'tmp', `stage-${id}`),
+  /** Untrusted extraction target. Nothing here is trusted until it is walked. */
+  bundleQuarantineDir: (id: string) => path.join(helmRoot, 'tmp', `import-${id}`),
+
   agentsDir: path.join(helmRoot, 'agents'),
   agentDir: (id: string) => path.join(helmRoot, 'agents', id),
   agentWorkspaceDir: (id: string) => path.join(helmRoot, 'agents', id, 'workspace'),

@@ -1,5 +1,12 @@
 import { sql } from 'drizzle-orm';
-import { integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import {
+  index,
+  integer,
+  primaryKey,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from 'drizzle-orm/sqlite-core';
 
 export const agents = sqliteTable('agents', {
   id: text('id').primaryKey(),
@@ -25,6 +32,27 @@ export const agents = sqliteTable('agents', {
   // has this set; it's hidden from the normal fleet list and gets its own
   // chat surface. Everything else (runner, sessions, logs) is shared.
   isOperator: integer('is_operator', { mode: 'boolean' }).notNull().default(false),
+  // ── Deployment (helmship M-remote-2) ──────────────────────────────────────
+  // The remote this agent lives on. Deliberately NOT a FK: ON DELETE SET NULL
+  // would silently mark a still-running remote agent as local, and CASCADE
+  // would delete it outright. `removeRemote` guards instead.
+  deployedTo: text('deployed_to'),
+  // The single "is this agent locally live?" predicate. null = this daemon owns
+  // it and may run it. Non-null = the run gate refuses, reconcileGateways()
+  // drops its pollers, and the heartbeat tick skips it:
+  //   'shipping'   local→remote transfer in flight
+  //   'deployed'   settled on deployedTo
+  //   'recalling'  remote→local transfer in flight
+  //   'stranded'   transfer outcome unknown; needs an operator decision
+  // Written BEFORE deactivation so a crash mid-transfer restarts with the agent
+  // still deactivated — otherwise two pollers could hold one bot token.
+  deployState: text('deploy_state'),
+  deployedAt: integer('deployed_at', { mode: 'timestamp' }),
+  // Last transfer failure, surfaced in the console. Cleared on the next attempt.
+  deployError: text('deploy_error'),
+  // Rolling-window cap on turns from ALL sources (heartbeat, gateway, console).
+  // null = unlimited. Enforced centrally in src/server/runs.ts.
+  runBudgetPerHour: integer('run_budget_per_hour'),
   createdAt: integer('created_at', { mode: 'timestamp' })
     .notNull()
     .default(sql`(unixepoch())`),
@@ -166,6 +194,62 @@ export const heartbeats = sqliteTable('heartbeats', {
     .default(sql`(unixepoch())`),
 });
 
+// The run ledger. Backs three things at once: the rolling run budget's count,
+// the *reservation* that makes that budget correct when several triggers fire
+// at once, and the recent-runs view for local and deployed agents.
+//
+// The full transcript stays on disk at .helm/agents/<id>/logs/<runId>.ndjson;
+// this is the index over it. A run id is a uuid and carries no timestamp, so
+// without this table "runs in the last hour" would mean statting every log file.
+export const runs = sqliteTable(
+  'runs',
+  {
+    // Identical to the runId and therefore to the .ndjson filename.
+    id: text('id').primaryKey(),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    // 'chat' | 'heartbeat:<id>' | 'telegram:<chatId>' | 'manual' — matches the
+    // `source` already written to the ndjson helm_meta line.
+    source: text('source').notNull(),
+    // 'queued'   reserved by reserveRun, not yet started
+    // 'running'  turn in flight
+    // 'ok' | 'error'
+    // 'refused'  never ran (budget / paused / deployed)
+    // 'interrupted' the process died mid-run; set by the boot sweep
+    // NOTE: 'refused' and 'interrupted' rows are excluded from the budget count
+    // — counting refusals would keep the window permanently full.
+    status: text('status').notNull(),
+    // 'budget' | 'paused' | 'deployed' | 'transferring' when status='refused'.
+    refusedReason: text('refused_reason'),
+    // Both truncated (see RUN_TEXT_LIMIT) — the ndjson holds the full text.
+    prompt: text('prompt').notNull(),
+    resultText: text('result_text'),
+    exitCode: integer('exit_code'),
+    isError: integer('is_error', { mode: 'boolean' }),
+    startedAt: integer('started_at', { mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    endedAt: integer('ended_at', { mode: 'timestamp' }),
+  },
+  // The budget query is `where agent_id = ? and started_at > ?` on every single
+  // run admission, so it gets a covering index.
+  (t) => [index('runs_agent_started_idx').on(t.agentId, t.startedAt)],
+);
+
+// Daemon-scoped key/value state that outlives the process but belongs to no
+// row. Today one key: 'daemon.paused'. The kill switch must survive a systemd
+// restart or it isn't a kill switch — an in-memory flag would silently lift
+// itself on the crash-loop it was meant to stop.
+export const settings = sqliteTable('settings', {
+  key: text('key').primaryKey(),
+  // JSON-encoded.
+  value: text('value').notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
 export type Agent = typeof agents.$inferSelect;
 export type NewAgent = typeof agents.$inferInsert;
 export type Tool = typeof tools.$inferSelect;
@@ -174,3 +258,6 @@ export type Gateway = typeof gateways.$inferSelect;
 export type GatewayChat = typeof gatewaysChat.$inferSelect;
 export type Heartbeat = typeof heartbeats.$inferSelect;
 export type Remote = typeof remotes.$inferSelect;
+export type Run = typeof runs.$inferSelect;
+export type NewRun = typeof runs.$inferInsert;
+export type Setting = typeof settings.$inferSelect;
