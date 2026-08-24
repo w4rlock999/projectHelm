@@ -10,6 +10,7 @@ import {
   updateAgentSessionScope,
   updateAgentSystemPrompt,
 } from '../../agents.ts';
+import { listRuns } from '../../runs.ts';
 import { publicProcedure, router } from '../init.ts';
 
 const idInput = z.object({ id: z.string().uuid() });
@@ -22,6 +23,15 @@ export const agentsRouter = router({
     if (!agent) throw new TRPCError({ code: 'NOT_FOUND' });
     return agent;
   }),
+
+  /** Recent turns from the run ledger — every source, including refusals. */
+  runs: publicProcedure
+    .input(z.object({ id: z.string().uuid(), limit: z.number().int().min(1).max(200).optional() }))
+    .query(({ input }) => {
+      const agent = loadAgent(input.id);
+      if (!agent) throw new TRPCError({ code: 'NOT_FOUND' });
+      return listRuns(input.id, input.limit);
+    }),
 
   create: publicProcedure
     .input(

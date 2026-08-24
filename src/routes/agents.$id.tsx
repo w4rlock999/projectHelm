@@ -5,11 +5,12 @@ import { ChatView } from '#/components/chat/ChatView';
 import { ToolsPanel } from '#/components/agent/ToolsPanel';
 import { GatewaysPanel } from '#/components/agent/GatewaysPanel';
 import { HeartbeatsPanel } from '#/components/agent/HeartbeatsPanel';
+import { RunsPanel } from '#/components/agent/RunsPanel';
 import { trpc } from '#/lib/trpc';
 
 export const Route = createFileRoute('/agents/$id')({ component: AgentPage });
 
-const TABS = ['Chat', 'Tools', 'Gateways', 'Heartbeats'] as const;
+const TABS = ['Chat', 'Runs', 'Tools', 'Gateways', 'Heartbeats'] as const;
 type Tab = (typeof TABS)[number];
 
 function AgentPage() {
@@ -111,6 +112,7 @@ function AgentPage() {
       {tab === 'Chat' && (
         <ChatView agent={agent} onSessionAppeared={() => utils.agents.get.invalidate({ id })} />
       )}
+      {tab === 'Runs' && <RunsPanel agentId={agent.id} />}
       {tab === 'Tools' && <ToolsPanel agentId={agent.id} />}
       {tab === 'Gateways' && <GatewaysPanel agentId={agent.id} />}
       {tab === 'Heartbeats' && <HeartbeatsPanel agentId={agent.id} />}

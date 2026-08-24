@@ -1,3 +1,4 @@
+import { sweepInterruptedRuns } from '../runs.ts';
 import { reconcileGateways } from './gateways.ts';
 import { startHeartbeatScheduler } from './heartbeats.ts';
 
@@ -11,6 +12,11 @@ export function ensureRuntimeStarted(): void {
   if ((globalThis as any).__helmRuntimeStarted) return;
   (globalThis as any).__helmRuntimeStarted = true;
   try {
+    // Runs left 'queued'/'running' by a process that died mid-turn would
+    // otherwise count against their agent's budget forever, since a run that
+    // never ends never leaves the counted set. Sweep before anything can start.
+    const swept = sweepInterruptedRuns();
+    if (swept > 0) console.log(`[helm] marked ${swept} interrupted run(s) from a previous process`);
     startHeartbeatScheduler();
     reconcileGateways();
     console.log('[helm] runtime started (heartbeat scheduler + gateway pollers)');

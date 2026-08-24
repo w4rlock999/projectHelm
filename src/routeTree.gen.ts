@@ -24,6 +24,7 @@ import { Route as ApiAgentsListRouteImport } from './routes/api/agents.list'
 import { Route as ApiAgentsCreateRouteImport } from './routes/api/agents.create'
 import { Route as ApiRemotesIdPingRouteImport } from './routes/api/remotes_.$id.ping'
 import { Route as ApiAgentsIdToolsRouteImport } from './routes/api/agents.$id.tools'
+import { Route as ApiAgentsIdRunsRouteImport } from './routes/api/agents.$id.runs'
 import { Route as ApiAgentsIdMessagesRouteImport } from './routes/api/agents.$id.messages'
 import { Route as ApiAgentsIdInfoRouteImport } from './routes/api/agents.$id.info'
 import { Route as ApiAgentsIdHeartbeatsRouteImport } from './routes/api/agents.$id.heartbeats'
@@ -106,6 +107,11 @@ const ApiAgentsIdToolsRoute = ApiAgentsIdToolsRouteImport.update({
   path: '/api/agents/$id/tools',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAgentsIdRunsRoute = ApiAgentsIdRunsRouteImport.update({
+  id: '/api/agents/$id/runs',
+  path: '/api/agents/$id/runs',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAgentsIdMessagesRoute = ApiAgentsIdMessagesRouteImport.update({
   id: '/api/agents/$id/messages',
   path: '/api/agents/$id/messages',
@@ -156,6 +162,7 @@ export interface FileRoutesByFullPath {
   '/api/agents/$id/heartbeats': typeof ApiAgentsIdHeartbeatsRouteWithChildren
   '/api/agents/$id/info': typeof ApiAgentsIdInfoRoute
   '/api/agents/$id/messages': typeof ApiAgentsIdMessagesRoute
+  '/api/agents/$id/runs': typeof ApiAgentsIdRunsRoute
   '/api/agents/$id/tools': typeof ApiAgentsIdToolsRouteWithChildren
   '/api/remotes/$id/ping': typeof ApiRemotesIdPingRoute
   '/api/agents/$id/heartbeats/$hbId': typeof ApiAgentsIdHeartbeatsHbIdRoute
@@ -179,6 +186,7 @@ export interface FileRoutesByTo {
   '/api/agents/$id/heartbeats': typeof ApiAgentsIdHeartbeatsRouteWithChildren
   '/api/agents/$id/info': typeof ApiAgentsIdInfoRoute
   '/api/agents/$id/messages': typeof ApiAgentsIdMessagesRoute
+  '/api/agents/$id/runs': typeof ApiAgentsIdRunsRoute
   '/api/agents/$id/tools': typeof ApiAgentsIdToolsRouteWithChildren
   '/api/remotes/$id/ping': typeof ApiRemotesIdPingRoute
   '/api/agents/$id/heartbeats/$hbId': typeof ApiAgentsIdHeartbeatsHbIdRoute
@@ -203,6 +211,7 @@ export interface FileRoutesById {
   '/api/agents/$id/heartbeats': typeof ApiAgentsIdHeartbeatsRouteWithChildren
   '/api/agents/$id/info': typeof ApiAgentsIdInfoRoute
   '/api/agents/$id/messages': typeof ApiAgentsIdMessagesRoute
+  '/api/agents/$id/runs': typeof ApiAgentsIdRunsRoute
   '/api/agents/$id/tools': typeof ApiAgentsIdToolsRouteWithChildren
   '/api/remotes_/$id/ping': typeof ApiRemotesIdPingRoute
   '/api/agents/$id/heartbeats/$hbId': typeof ApiAgentsIdHeartbeatsHbIdRoute
@@ -228,6 +237,7 @@ export interface FileRouteTypes {
     | '/api/agents/$id/heartbeats'
     | '/api/agents/$id/info'
     | '/api/agents/$id/messages'
+    | '/api/agents/$id/runs'
     | '/api/agents/$id/tools'
     | '/api/remotes/$id/ping'
     | '/api/agents/$id/heartbeats/$hbId'
@@ -251,6 +261,7 @@ export interface FileRouteTypes {
     | '/api/agents/$id/heartbeats'
     | '/api/agents/$id/info'
     | '/api/agents/$id/messages'
+    | '/api/agents/$id/runs'
     | '/api/agents/$id/tools'
     | '/api/remotes/$id/ping'
     | '/api/agents/$id/heartbeats/$hbId'
@@ -274,6 +285,7 @@ export interface FileRouteTypes {
     | '/api/agents/$id/heartbeats'
     | '/api/agents/$id/info'
     | '/api/agents/$id/messages'
+    | '/api/agents/$id/runs'
     | '/api/agents/$id/tools'
     | '/api/remotes_/$id/ping'
     | '/api/agents/$id/heartbeats/$hbId'
@@ -296,6 +308,7 @@ export interface RootRouteChildren {
   ApiAgentsIdHeartbeatsRoute: typeof ApiAgentsIdHeartbeatsRouteWithChildren
   ApiAgentsIdInfoRoute: typeof ApiAgentsIdInfoRoute
   ApiAgentsIdMessagesRoute: typeof ApiAgentsIdMessagesRoute
+  ApiAgentsIdRunsRoute: typeof ApiAgentsIdRunsRoute
   ApiAgentsIdToolsRoute: typeof ApiAgentsIdToolsRouteWithChildren
   ApiRemotesIdPingRoute: typeof ApiRemotesIdPingRoute
 }
@@ -407,6 +420,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAgentsIdToolsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/agents/$id/runs': {
+      id: '/api/agents/$id/runs'
+      path: '/api/agents/$id/runs'
+      fullPath: '/api/agents/$id/runs'
+      preLoaderRoute: typeof ApiAgentsIdRunsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/agents/$id/messages': {
       id: '/api/agents/$id/messages'
       path: '/api/agents/$id/messages'
@@ -516,6 +536,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAgentsIdHeartbeatsRoute: ApiAgentsIdHeartbeatsRouteWithChildren,
   ApiAgentsIdInfoRoute: ApiAgentsIdInfoRoute,
   ApiAgentsIdMessagesRoute: ApiAgentsIdMessagesRoute,
+  ApiAgentsIdRunsRoute: ApiAgentsIdRunsRoute,
   ApiAgentsIdToolsRoute: ApiAgentsIdToolsRouteWithChildren,
   ApiRemotesIdPingRoute: ApiRemotesIdPingRoute,
 }
