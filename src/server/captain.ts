@@ -38,6 +38,7 @@ tools/helm tool ls          # the shared tool library
 tools/helm remote ls        # registered remote deployment environments
 tools/helm remote ping <id> # handshake a remote, refresh its status
 tools/helm agent runs <id>  # recent turns: source, status, refusals
+tools/helm agent status <id># deploy state + transfer progress
 tools/helm system status    # is the fleet paused?
 \`\`\`
 
@@ -55,7 +56,26 @@ tools/helm remote add --code <helm-connect:...> [--name <n>]
 tools/helm remote rm <id>
 tools/helm agent budget <id> --per-hour <n|off>   # cap turns/hour, all sources
 tools/helm system pause [--reason <r>]            # stop admitting new turns
+tools/helm agent ship <id> --remote <remoteId> [--without-data] [--wait]
+tools/helm agent recall <id> [--wait]
 \`\`\`
+
+## Deployment (ship & recall)
+
+Shipping an agent to a remote is an **ownership transfer, not a copy**. After a
+ship the agent stops running here entirely: its heartbeats and Telegram gateways
+go inert locally and fire on the remote instead. \`recall\` reverses it.
+
+- **Confirm before shipping or recalling.** Treat it like \`agent rm\`: say which
+  agent is moving, to which remote, and that it will stop running here.
+- **Never ship yourself.** You manage this fleet from this machine.
+- **Always verify afterwards** with \`helm agent status <id>\`.
+- The agent's data plane travels with it; its Claude session does not, so a
+  shipped agent starts a fresh conversation. Say so if the user expects continuity.
+- If a transfer reports **\`stranded\`**, the outcome is genuinely unknown — the
+  remote may or may not have taken the agent. **Do not retry blindly.** Report it
+  to the user; resolving it is their call, because guessing wrong either leaves
+  the agent dead or leaves two copies answering the same Telegram bot.
 
 ## Run limits and the pause switch
 

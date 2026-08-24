@@ -57,6 +57,32 @@ function out(v) {
   console.log(JSON.stringify(v, null, 2));
 }
 
+// Poll a transfer to completion. A ship takes minutes, so this is opt-in
+// (--wait); the default is fire-and-report-once so the captain isn't blocked
+// inside a single Bash call.
+async function watchTransfer(agentId) {
+  let lastPhase = '';
+  for (let i = 0; i < 600; i++) {
+    const s = await get('/api/agents/' + agentId + '/ship');
+    const t = s.transfer;
+    if (t && t.phase !== lastPhase) {
+      lastPhase = t.phase;
+      const last = t.log[t.log.length - 1];
+      console.log('  ' + t.phase + (last ? ' — ' + last.message : ''));
+    }
+    if (t && t.outcome) {
+      out(t.outcome);
+      if (!t.outcome.ok) process.exit(1);
+      return;
+    }
+    await new Promise(function (r) {
+      setTimeout(r, 2000);
+    });
+  }
+  console.error('gave up waiting after 20 minutes; poll with: helm agent status ' + agentId);
+  process.exit(1);
+}
+
 function usage() {
   console.log(
     'helm — manage helmConsole\n' +
@@ -69,6 +95,7 @@ function usage() {
       '  helm remote ping <id>\n' +
       '  helm agent runs <id> [--limit <n>]\n' +
       '  helm system status\n' +
+      '  helm agent status <id>            # deploy state + transfer progress\n' +
       'write:\n' +
       '  helm agent new --name <n> --prompt|--prompt-file <p> [--model <m>]\n' +
       '  helm agent set-prompt <id> --prompt|--prompt-file <p>\n' +
@@ -83,6 +110,8 @@ function usage() {
       '  helm remote rm <id>\n' +
       '  helm remote pause <id> [--reason <r>] | helm remote resume <id>\n' +
       '  helm agent budget <id> --per-hour <n|off>\n' +
+      '  helm agent ship <id> --remote <remoteId> [--without-data] [--wait]\n' +
+      '  helm agent recall <id> [--wait]\n' +
       '  helm system pause [--reason <r>]   # resume needs the operator, not an agent',
   );
 }
@@ -142,6 +171,35 @@ function usage() {
       const f = flags(argv.slice(3)).out;
       const q = f.limit ? '?limit=' + encodeURIComponent(f.limit) : '';
       out(await get('/api/agents/' + argv[2] + '/runs' + q));
+    } else if (sub === 'ship') {
+      const f = flags(argv.slice(3)).out;
+      if (!argv[2] || !f.remote) {
+        console.error('usage: helm agent ship <id> --remote <remoteId> [--without-data] [--wait]');
+        process.exit(1);
+      }
+      const started = await call('POST', '/api/agents/' + argv[2] + '/ship', {
+        remoteId: f.remote,
+        withoutData: f['without-data'] === 'true',
+      });
+      console.log('ship started (' + started.transferId + ')');
+      if (f.wait) await watchTransfer(argv[2]);
+      else out(await get('/api/agents/' + argv[2] + '/ship'));
+    } else if (sub === 'recall') {
+      if (!argv[2]) {
+        console.error('usage: helm agent recall <id> [--wait]');
+        process.exit(1);
+      }
+      const f = flags(argv.slice(3)).out;
+      const started = await call('POST', '/api/agents/' + argv[2] + '/ship', { recall: true });
+      console.log('recall started (' + started.transferId + ')');
+      if (f.wait) await watchTransfer(argv[2]);
+      else out(await get('/api/agents/' + argv[2] + '/ship'));
+    } else if (sub === 'status') {
+      if (!argv[2]) {
+        console.error('usage: helm agent status <id>');
+        process.exit(1);
+      }
+      out(await get('/api/agents/' + argv[2] + '/ship'));
     } else if (sub === 'budget') {
       const f = flags(argv.slice(3)).out;
       if (!argv[2] || !f['per-hour']) {

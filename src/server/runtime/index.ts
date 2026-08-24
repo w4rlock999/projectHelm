@@ -1,3 +1,4 @@
+import { recoverInterruptedTransfers } from '../remotes/ship.ts';
 import { sweepInterruptedRuns } from '../runs.ts';
 import { reconcileGateways } from './gateways.ts';
 import { startHeartbeatScheduler } from './heartbeats.ts';
@@ -19,6 +20,13 @@ export function ensureRuntimeStarted(): void {
     if (swept > 0) console.log(`[helm] marked ${swept} interrupted run(s) from a previous process`);
     startHeartbeatScheduler();
     reconcileGateways();
+    // An interrupted ship/recall left its agent deactivated (the safe half);
+    // this decides whether it belongs here or on the remote. Fire-and-forget,
+    // and it must never throw into this path — the catch below un-sets the
+    // guard flag, which would make the runtime start over on every request.
+    void recoverInterruptedTransfers().catch((err) =>
+      console.error('[helm] transfer recovery failed:', String(err)),
+    );
     console.log('[helm] runtime started (heartbeat scheduler + gateway pollers)');
   } catch (err) {
     // Don't wedge request handling if boot hiccups; next request retries.
