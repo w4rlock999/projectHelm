@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import {
   deleteAgent,
+  DeployedAgentError,
   loadAgent,
   updateAgentRunBudget,
   updateAgentSystemPrompt,
@@ -106,7 +107,14 @@ export const Route = createFileRoute('/api/agents/$id/info')({
         if (!loadAgent(params.id)) {
           return Response.json({ error: 'agent not found' }, { status: 404 });
         }
-        deleteAgent(params.id);
+        try {
+          deleteAgent(params.id);
+        } catch (err) {
+          if (err instanceof DeployedAgentError) {
+            return Response.json({ error: err.message }, { status: 409 });
+          }
+          throw err;
+        }
         return Response.json({ ok: true, id: params.id });
       },
     },

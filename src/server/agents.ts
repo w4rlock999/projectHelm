@@ -104,7 +104,27 @@ export function resetAgentSession(id: string): void {
   db.update(agents).set({ claudeSessionId: null }).where(eq(agents.id, id)).run();
 }
 
-export function deleteAgent(id: string): void {
+/**
+ * Thrown when an operation would strand an agent that lives on a remote.
+ * The local row holds the only record of `deployedTo`, so deleting it orphans a
+ * live remote agent permanently — it keeps polling Telegram with nothing left
+ * here that knows it exists.
+ */
+export class DeployedAgentError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DeployedAgentError';
+  }
+}
+
+export function deleteAgent(id: string, opts: { force?: boolean } = {}): void {
+  const agent = loadAgent(id);
+  if (agent && agent.deployState !== null && !opts.force) {
+    throw new DeployedAgentError(
+      `"${agent.name}" is ${agent.deployState} on a remote — recall it before deleting, ` +
+        `or the remote copy keeps running with nothing here tracking it`,
+    );
+  }
   db.delete(agents).where(eq(agents.id, id)).run();
   rmSync(paths.agentDir(id), { recursive: true, force: true });
 }

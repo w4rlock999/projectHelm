@@ -24,6 +24,15 @@ interface TunnelHandle {
   proc: ChildProcess | null;
   localPort: number;
   lastUsedAt: number;
+  /**
+   * Operations currently using this tunnel. While > 0 it is never reaped, no
+   * matter how long it has been open.
+   *
+   * Without this the idle clock starts when an operation *begins*: a bundle
+   * upload taking longer than IDLE_TTL_MS would have its ssh process SIGTERM'd
+   * mid-transfer. M1 never hit it because every call was a 10s handshake.
+   */
+  leases: number;
   /** Resolves when the forwarded port accepts connections; rejects on ssh failure. */
   ready: Promise<void>;
   stderrTail: string[];
@@ -82,6 +91,7 @@ function openTunnel(remote: TunnelTarget): TunnelHandle {
     proc: null,
     localPort: 0,
     lastUsedAt: Date.now(),
+    leases: 0,
     ready: Promise.resolve(),
     stderrTail: [],
   };
@@ -150,14 +160,36 @@ export async function withTunnel<T>(
     if (tunnels.get(remote.id) === handle) tunnels.delete(remote.id);
     throw err;
   }
-  handle.lastUsedAt = Date.now();
-  return fn(handle.localPort);
+  handle.leases++;
+  try {
+    handle.lastUsedAt = Date.now();
+    // Awaited, not returned: the finally below must run when the operation
+    // finishes, not when the promise is handed back.
+    return await fn(handle.localPort);
+  } finally {
+    handle.leases--;
+    // Restart the idle clock at the END of the operation.
+    handle.lastUsedAt = Date.now();
+  }
+}
+
+/**
+ * Whether a tunnel may be reaped. Pure so the lease rule is testable without
+ * spawning ssh (cf. parseSshTarget).
+ */
+export function shouldReap(h: Pick<TunnelHandle, 'leases' | 'lastUsedAt'>, now: number): boolean {
+  return h.leases === 0 && now - h.lastUsedAt > IDLE_TTL_MS;
 }
 
 /** Kill the tunnel for a remote (e.g. when it's removed from the registry). */
 export function teardownTunnel(remoteId: string): void {
   const handle = tunnels.get(remoteId);
   if (!handle) return;
+  if (handle.leases > 0) {
+    console.warn(
+      `[helm] tearing down tunnel ${remoteId} with ${handle.leases} operation(s) still using it`,
+    );
+  }
   tunnels.delete(remoteId);
   handle.proc?.kill('SIGTERM');
 }
@@ -168,10 +200,9 @@ function ensureReaper(): void {
   g.__helmTunnelReaper = setInterval(() => {
     const now = Date.now();
     for (const [id, handle] of tunnels) {
-      if (now - handle.lastUsedAt > IDLE_TTL_MS) {
-        tunnels.delete(id);
-        handle.proc?.kill('SIGTERM');
-      }
+      if (!shouldReap(handle, now)) continue;
+      tunnels.delete(id);
+      handle.proc?.kill('SIGTERM');
     }
   }, REAP_INTERVAL_MS);
   // Never keep the process alive just to reap tunnels.

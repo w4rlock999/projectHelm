@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   createAgent,
   deleteAgent,
+  DeployedAgentError,
   listAgents,
   loadAgent,
   resetAgentSession,
@@ -71,7 +72,14 @@ export const agentsRouter = router({
   delete: publicProcedure.input(idInput).mutation(({ input }) => {
     const agent = loadAgent(input.id);
     if (!agent) throw new TRPCError({ code: 'NOT_FOUND' });
-    deleteAgent(input.id);
+    try {
+      deleteAgent(input.id);
+    } catch (err) {
+      if (err instanceof DeployedAgentError) {
+        throw new TRPCError({ code: 'CONFLICT', message: err.message });
+      }
+      throw err;
+    }
     return { id: input.id };
   }),
 

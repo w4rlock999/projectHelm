@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { db } from '../../db/index.ts';
-import { remotes, type Remote } from '../../db/schema.ts';
+import { agents, remotes, type Remote } from '../../db/schema.ts';
 import { HELM_VERSION } from '../../version.ts';
 import type { RemoteInfo } from '../remote-info.ts';
-import { fetchRemoteInfo, RemoteError, type RemoteErrorKind } from './client.ts';
+import { fetchRemoteInfo, RemoteError, setRemotePaused, type RemoteErrorKind } from './client.ts';
 import { decodeConnectCode } from './connect-code.ts';
 import { teardownTunnel } from './tunnel.ts';
 
@@ -82,6 +82,17 @@ export async function addRemote(
 export function removeRemote(id: string): boolean {
   const existing = getRemote(id);
   if (!existing) return false;
+
+  // Unregistering a remote that still hosts agents would leave them running
+  // there with nothing left here pointing at them — deployedTo would dangle.
+  const deployed = db.select().from(agents).where(eq(agents.deployedTo, id)).all();
+  if (deployed.length > 0) {
+    throw new Error(
+      `${deployed.length} agent(s) are deployed to "${existing.name}" ` +
+        `(${deployed.map((a) => a.name).join(', ')}) — recall them first`,
+    );
+  }
+
   teardownTunnel(id);
   db.delete(remotes).where(eq(remotes.id, id)).run();
   return true;
@@ -117,4 +128,37 @@ function versionWarning(remoteVersion: string): string | undefined {
   const majorMinor = (v: string) => v.split('.').slice(0, 2).join('.');
   if (majorMinor(remoteVersion) === majorMinor(HELM_VERSION)) return undefined;
   return `remote runs helm ${remoteVersion}, local is ${HELM_VERSION} — update one of them before shipping agents`;
+}
+
+export type RemotePauseResult =
+  | { ok: true; paused: boolean; since: string | null; reason: string | null }
+  | { ok: false; error: string; kind: RemoteErrorKind };
+
+/**
+ * Pause or resume a registered remote. Like pingRemote, expected failures come
+ * back as `{ ok: false }` rather than throwing — they're status, not errors.
+ */
+export async function pauseRemote(
+  id: string,
+  paused: boolean,
+  reason?: string,
+): Promise<RemotePauseResult | null> {
+  const remote = getRemote(id);
+  if (!remote) return null;
+  try {
+    const state = await setRemotePaused(remote, paused, reason);
+    return { ok: true, ...state };
+  } catch (err) {
+    const kind = err instanceof RemoteError ? err.kind : 'ssh';
+    return { ok: false, error: err instanceof Error ? err.message : String(err), kind };
+  }
+}
+
+/** Agents this local helm believes are deployed to `remoteId`. */
+export function agentsDeployedTo(remoteId: string): { id: string; name: string }[] {
+  return db
+    .select({ id: agents.id, name: agents.name })
+    .from(agents)
+    .where(eq(agents.deployedTo, remoteId))
+    .all();
 }

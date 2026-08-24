@@ -72,6 +72,8 @@ export function FleetCard({ agent }: Props) {
 
         <div className={cn(monoMeta, 'mt-4 text-[0.6rem] text-[var(--warm-ink-faint)]')}>
           {agent.model ?? 'sonnet'} · {new Date(agent.createdAt).toLocaleDateString()}
+          {agent.deployState ? ` · ${agent.deployState}` : ''}
+          {agent.runBudgetPerHour ? ` · ${agent.runBudgetPerHour}/h` : ''}
         </div>
 
         <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3">

@@ -81,6 +81,7 @@ function usage() {
       '  helm remote add --code <helm-connect:...> [--name <n>]\n' +
       '  helm remote add --ssh <user@host[:port]> --token <t> [--port <helmPort>] [--name <n>]\n' +
       '  helm remote rm <id>\n' +
+      '  helm remote pause <id> [--reason <r>] | helm remote resume <id>\n' +
       '  helm agent budget <id> --per-hour <n|off>\n' +
       '  helm system pause [--reason <r>]   # resume needs the operator, not an agent',
   );
@@ -243,6 +244,18 @@ function usage() {
       const r = await call('POST', '/api/remotes', body);
       console.log('added remote ' + r.remote.id + ' (' + r.remote.name + ')');
       out(r.info);
+    } else if (sub === 'pause' || sub === 'resume') {
+      if (!argv[2]) {
+        console.error('usage: helm remote ' + sub + ' <id>');
+        process.exit(1);
+      }
+      const f = flags(argv.slice(3)).out;
+      out(
+        await call('POST', '/api/remotes/' + argv[2] + '/pause', {
+          paused: sub === 'pause',
+          reason: f.reason,
+        }),
+      );
     } else if (sub === 'ping') {
       if (!argv[2]) {
         console.error('usage: helm remote ping <id>');

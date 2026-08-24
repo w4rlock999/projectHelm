@@ -22,10 +22,13 @@ import { Route as ApiSystemStatusRouteImport } from './routes/api/system.status'
 import { Route as ApiSystemResumeRouteImport } from './routes/api/system.resume'
 import { Route as ApiSystemPauseRouteImport } from './routes/api/system.pause'
 import { Route as ApiRemotesIdRouteImport } from './routes/api/remotes.$id'
+import { Route as ApiRemoteResumeRouteImport } from './routes/api/remote.resume'
+import { Route as ApiRemotePauseRouteImport } from './routes/api/remote.pause'
 import { Route as ApiRemoteInfoRouteImport } from './routes/api/remote.info'
 import { Route as ApiAgentsListRouteImport } from './routes/api/agents.list'
 import { Route as ApiAgentsCreateRouteImport } from './routes/api/agents.create'
 import { Route as ApiRemotesIdPingRouteImport } from './routes/api/remotes_.$id.ping'
+import { Route as ApiRemotesIdPauseRouteImport } from './routes/api/remotes_.$id.pause'
 import { Route as ApiAgentsIdToolsRouteImport } from './routes/api/agents.$id.tools'
 import { Route as ApiAgentsIdRunsRouteImport } from './routes/api/agents.$id.runs'
 import { Route as ApiAgentsIdMessagesRouteImport } from './routes/api/agents.$id.messages'
@@ -100,6 +103,16 @@ const ApiRemotesIdRoute = ApiRemotesIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => ApiRemotesRoute,
 } as any)
+const ApiRemoteResumeRoute = ApiRemoteResumeRouteImport.update({
+  id: '/api/remote/resume',
+  path: '/api/remote/resume',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRemotePauseRoute = ApiRemotePauseRouteImport.update({
+  id: '/api/remote/pause',
+  path: '/api/remote/pause',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiRemoteInfoRoute = ApiRemoteInfoRouteImport.update({
   id: '/api/remote/info',
   path: '/api/remote/info',
@@ -118,6 +131,11 @@ const ApiAgentsCreateRoute = ApiAgentsCreateRouteImport.update({
 const ApiRemotesIdPingRoute = ApiRemotesIdPingRouteImport.update({
   id: '/api/remotes_/$id/ping',
   path: '/api/remotes/$id/ping',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRemotesIdPauseRoute = ApiRemotesIdPauseRouteImport.update({
+  id: '/api/remotes_/$id/pause',
+  path: '/api/remotes/$id/pause',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAgentsIdToolsRoute = ApiAgentsIdToolsRouteImport.update({
@@ -173,6 +191,8 @@ export interface FileRoutesByFullPath {
   '/api/agents/create': typeof ApiAgentsCreateRoute
   '/api/agents/list': typeof ApiAgentsListRoute
   '/api/remote/info': typeof ApiRemoteInfoRoute
+  '/api/remote/pause': typeof ApiRemotePauseRoute
+  '/api/remote/resume': typeof ApiRemoteResumeRoute
   '/api/remotes/$id': typeof ApiRemotesIdRoute
   '/api/system/pause': typeof ApiSystemPauseRoute
   '/api/system/resume': typeof ApiSystemResumeRoute
@@ -185,6 +205,7 @@ export interface FileRoutesByFullPath {
   '/api/agents/$id/messages': typeof ApiAgentsIdMessagesRoute
   '/api/agents/$id/runs': typeof ApiAgentsIdRunsRoute
   '/api/agents/$id/tools': typeof ApiAgentsIdToolsRouteWithChildren
+  '/api/remotes/$id/pause': typeof ApiRemotesIdPauseRoute
   '/api/remotes/$id/ping': typeof ApiRemotesIdPingRoute
   '/api/agents/$id/heartbeats/$hbId': typeof ApiAgentsIdHeartbeatsHbIdRoute
   '/api/agents/$id/tools/$toolId': typeof ApiAgentsIdToolsToolIdRoute
@@ -200,6 +221,8 @@ export interface FileRoutesByTo {
   '/api/agents/create': typeof ApiAgentsCreateRoute
   '/api/agents/list': typeof ApiAgentsListRoute
   '/api/remote/info': typeof ApiRemoteInfoRoute
+  '/api/remote/pause': typeof ApiRemotePauseRoute
+  '/api/remote/resume': typeof ApiRemoteResumeRoute
   '/api/remotes/$id': typeof ApiRemotesIdRoute
   '/api/system/pause': typeof ApiSystemPauseRoute
   '/api/system/resume': typeof ApiSystemResumeRoute
@@ -212,6 +235,7 @@ export interface FileRoutesByTo {
   '/api/agents/$id/messages': typeof ApiAgentsIdMessagesRoute
   '/api/agents/$id/runs': typeof ApiAgentsIdRunsRoute
   '/api/agents/$id/tools': typeof ApiAgentsIdToolsRouteWithChildren
+  '/api/remotes/$id/pause': typeof ApiRemotesIdPauseRoute
   '/api/remotes/$id/ping': typeof ApiRemotesIdPingRoute
   '/api/agents/$id/heartbeats/$hbId': typeof ApiAgentsIdHeartbeatsHbIdRoute
   '/api/agents/$id/tools/$toolId': typeof ApiAgentsIdToolsToolIdRoute
@@ -228,6 +252,8 @@ export interface FileRoutesById {
   '/api/agents/create': typeof ApiAgentsCreateRoute
   '/api/agents/list': typeof ApiAgentsListRoute
   '/api/remote/info': typeof ApiRemoteInfoRoute
+  '/api/remote/pause': typeof ApiRemotePauseRoute
+  '/api/remote/resume': typeof ApiRemoteResumeRoute
   '/api/remotes/$id': typeof ApiRemotesIdRoute
   '/api/system/pause': typeof ApiSystemPauseRoute
   '/api/system/resume': typeof ApiSystemResumeRoute
@@ -240,6 +266,7 @@ export interface FileRoutesById {
   '/api/agents/$id/messages': typeof ApiAgentsIdMessagesRoute
   '/api/agents/$id/runs': typeof ApiAgentsIdRunsRoute
   '/api/agents/$id/tools': typeof ApiAgentsIdToolsRouteWithChildren
+  '/api/remotes_/$id/pause': typeof ApiRemotesIdPauseRoute
   '/api/remotes_/$id/ping': typeof ApiRemotesIdPingRoute
   '/api/agents/$id/heartbeats/$hbId': typeof ApiAgentsIdHeartbeatsHbIdRoute
   '/api/agents/$id/tools/$toolId': typeof ApiAgentsIdToolsToolIdRoute
@@ -257,6 +284,8 @@ export interface FileRouteTypes {
     | '/api/agents/create'
     | '/api/agents/list'
     | '/api/remote/info'
+    | '/api/remote/pause'
+    | '/api/remote/resume'
     | '/api/remotes/$id'
     | '/api/system/pause'
     | '/api/system/resume'
@@ -269,6 +298,7 @@ export interface FileRouteTypes {
     | '/api/agents/$id/messages'
     | '/api/agents/$id/runs'
     | '/api/agents/$id/tools'
+    | '/api/remotes/$id/pause'
     | '/api/remotes/$id/ping'
     | '/api/agents/$id/heartbeats/$hbId'
     | '/api/agents/$id/tools/$toolId'
@@ -284,6 +314,8 @@ export interface FileRouteTypes {
     | '/api/agents/create'
     | '/api/agents/list'
     | '/api/remote/info'
+    | '/api/remote/pause'
+    | '/api/remote/resume'
     | '/api/remotes/$id'
     | '/api/system/pause'
     | '/api/system/resume'
@@ -296,6 +328,7 @@ export interface FileRouteTypes {
     | '/api/agents/$id/messages'
     | '/api/agents/$id/runs'
     | '/api/agents/$id/tools'
+    | '/api/remotes/$id/pause'
     | '/api/remotes/$id/ping'
     | '/api/agents/$id/heartbeats/$hbId'
     | '/api/agents/$id/tools/$toolId'
@@ -311,6 +344,8 @@ export interface FileRouteTypes {
     | '/api/agents/create'
     | '/api/agents/list'
     | '/api/remote/info'
+    | '/api/remote/pause'
+    | '/api/remote/resume'
     | '/api/remotes/$id'
     | '/api/system/pause'
     | '/api/system/resume'
@@ -323,6 +358,7 @@ export interface FileRouteTypes {
     | '/api/agents/$id/messages'
     | '/api/agents/$id/runs'
     | '/api/agents/$id/tools'
+    | '/api/remotes_/$id/pause'
     | '/api/remotes_/$id/ping'
     | '/api/agents/$id/heartbeats/$hbId'
     | '/api/agents/$id/tools/$toolId'
@@ -339,6 +375,8 @@ export interface RootRouteChildren {
   ApiAgentsCreateRoute: typeof ApiAgentsCreateRoute
   ApiAgentsListRoute: typeof ApiAgentsListRoute
   ApiRemoteInfoRoute: typeof ApiRemoteInfoRoute
+  ApiRemotePauseRoute: typeof ApiRemotePauseRoute
+  ApiRemoteResumeRoute: typeof ApiRemoteResumeRoute
   ApiSystemPauseRoute: typeof ApiSystemPauseRoute
   ApiSystemResumeRoute: typeof ApiSystemResumeRoute
   ApiSystemStatusRoute: typeof ApiSystemStatusRoute
@@ -349,6 +387,7 @@ export interface RootRouteChildren {
   ApiAgentsIdMessagesRoute: typeof ApiAgentsIdMessagesRoute
   ApiAgentsIdRunsRoute: typeof ApiAgentsIdRunsRoute
   ApiAgentsIdToolsRoute: typeof ApiAgentsIdToolsRouteWithChildren
+  ApiRemotesIdPauseRoute: typeof ApiRemotesIdPauseRoute
   ApiRemotesIdPingRoute: typeof ApiRemotesIdPingRoute
 }
 
@@ -445,6 +484,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiRemotesIdRouteImport
       parentRoute: typeof ApiRemotesRoute
     }
+    '/api/remote/resume': {
+      id: '/api/remote/resume'
+      path: '/api/remote/resume'
+      fullPath: '/api/remote/resume'
+      preLoaderRoute: typeof ApiRemoteResumeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/remote/pause': {
+      id: '/api/remote/pause'
+      path: '/api/remote/pause'
+      fullPath: '/api/remote/pause'
+      preLoaderRoute: typeof ApiRemotePauseRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/remote/info': {
       id: '/api/remote/info'
       path: '/api/remote/info'
@@ -471,6 +524,13 @@ declare module '@tanstack/react-router' {
       path: '/api/remotes/$id/ping'
       fullPath: '/api/remotes/$id/ping'
       preLoaderRoute: typeof ApiRemotesIdPingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/remotes_/$id/pause': {
+      id: '/api/remotes_/$id/pause'
+      path: '/api/remotes/$id/pause'
+      fullPath: '/api/remotes/$id/pause'
+      preLoaderRoute: typeof ApiRemotesIdPauseRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/agents/$id/tools': {
@@ -591,6 +651,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAgentsCreateRoute: ApiAgentsCreateRoute,
   ApiAgentsListRoute: ApiAgentsListRoute,
   ApiRemoteInfoRoute: ApiRemoteInfoRoute,
+  ApiRemotePauseRoute: ApiRemotePauseRoute,
+  ApiRemoteResumeRoute: ApiRemoteResumeRoute,
   ApiSystemPauseRoute: ApiSystemPauseRoute,
   ApiSystemResumeRoute: ApiSystemResumeRoute,
   ApiSystemStatusRoute: ApiSystemStatusRoute,
@@ -601,6 +663,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAgentsIdMessagesRoute: ApiAgentsIdMessagesRoute,
   ApiAgentsIdRunsRoute: ApiAgentsIdRunsRoute,
   ApiAgentsIdToolsRoute: ApiAgentsIdToolsRouteWithChildren,
+  ApiRemotesIdPauseRoute: ApiRemotesIdPauseRoute,
   ApiRemotesIdPingRoute: ApiRemotesIdPingRoute,
 }
 export const routeTree = rootRouteImport
