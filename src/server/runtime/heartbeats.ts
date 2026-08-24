@@ -5,6 +5,8 @@ import { heartbeats } from '../../db/schema.ts';
 import { cronMatches, isValidCron } from '../cron.ts';
 import { loadAgent } from '../agents.ts';
 import { runAgentTurn } from '../run.ts';
+import { RunRefusedError } from '../runs.ts';
+import { localAgentIds } from '../deploy-state.ts';
 import { listAgentChats, resolveSessionKey, resolveSessionStore } from './gateways.ts';
 import type { Heartbeat } from '../../db/schema.ts';
 
@@ -107,11 +109,14 @@ function tick(): void {
 
   let due: Heartbeat[];
   try {
+    // Deployed / mid-transfer agents belong to another daemon (or to no daemon
+    // yet). One indexed lookup per tick, not per row.
+    const local = localAgentIds();
     due = db
       .select()
       .from(heartbeats)
       .all()
-      .filter((h) => h.enabled);
+      .filter((h) => h.enabled && local.has(h.agentId));
   } catch (err) {
     console.error('[helm] heartbeat tick failed to read db:', String(err));
     return;
@@ -128,13 +133,16 @@ function tick(): void {
     if (!matches || running.has(hb.id)) continue;
 
     running.add(hb.id);
-    db.update(heartbeats).set({ lastRunAt: now }).where(eq(heartbeats.id, hb.id)).run();
-    void fireHeartbeat(hb).finally(() => running.delete(hb.id));
+    // lastRunAt is stamped inside fireHeartbeat, only once a turn actually
+    // starts. Stamping here would record a refused run as a successful fire and
+    // make the console lie. Nothing schedules off lastRunAt — dedupe is
+    // lastMinuteKey plus the `running` set — so it is display-only.
+    void fireHeartbeat(hb, now).finally(() => running.delete(hb.id));
   }
 }
 
 /** Resolve the heartbeat's audience and run the turn against the right session/chat. */
-async function fireHeartbeat(hb: Heartbeat): Promise<void> {
+async function fireHeartbeat(hb: Heartbeat, firedAt: Date): Promise<void> {
   const agent = loadAgent(hb.agentId);
   if (!agent) return;
 
@@ -160,7 +168,15 @@ async function fireHeartbeat(hb: Heartbeat): Promise<void> {
       // 'main' — the agent/console session (default store), no Telegram target.
       await runAgentTurn(hb.agentId, hb.prompt, { source: `heartbeat:${hb.id}` });
     }
+    db.update(heartbeats).set({ lastRunAt: firedAt }).where(eq(heartbeats.id, hb.id)).run();
   } catch (err) {
+    if (err instanceof RunRefusedError) {
+      // Refused, not failed: the heartbeat stays enabled and stays scheduled, and
+      // lastRunAt is deliberately not stamped. The 'refused' ledger row is the
+      // audit trail.
+      console.error(`[helm] heartbeat ${hb.id} refused (${err.reason}) — staying scheduled`);
+      return;
+    }
     console.error(`[helm] heartbeat ${hb.id} run failed:`, String(err));
   }
 }

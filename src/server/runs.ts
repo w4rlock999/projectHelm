@@ -3,6 +3,8 @@ import { and, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import { db } from '../db/index.ts';
 import { runs, type Run } from '../db/schema.ts';
 import { loadAgent } from './agents.ts';
+import { deployRefusal } from './deploy-state.ts';
+import { getPauseState, isPaused } from './runtime/pause.ts';
 
 // The run ledger: admission control in front of every agent turn, plus the
 // durable record of what ran.
@@ -14,6 +16,20 @@ import { loadAgent } from './agents.ts';
 
 /** Prompts and results are truncated here; the ndjson holds the full text. */
 const RUN_TEXT_LIMIT = 2000;
+
+/**
+ * The budget is a **rolling** window, not a clock-hour reset.
+ *
+ * A clock-hour reset satisfies "2 runs/hour" on paper while allowing 2 runs at
+ * :59 and 2 more at :00 — four turns in two minutes, which is precisely the
+ * burst this guard exists to prevent. Rolling gives the stronger property: never
+ * more than N runs in *any* 60-minute span.
+ *
+ * Overridable so the acceptance criterion ("runBudgetPerHour=2 with a * * * * *
+ * heartbeat yields exactly 2 runs/hour") is testable in 60 seconds rather than
+ * 60 minutes.
+ */
+export const BUDGET_WINDOW_MS = Number(process.env.HELM_BUDGET_WINDOW_MS) || 3_600_000;
 
 /** Statuses that consume budget. A run that never ran must not. */
 const COUNTED_STATUSES = ['queued', 'running', 'ok', 'error'] as const;
@@ -35,6 +51,28 @@ export class RunRefusedError extends Error {
     super(message);
     this.name = 'RunRefusedError';
   }
+}
+
+/**
+ * Pure budget decision, split out so the whole matrix is unit-testable without
+ * a database or a daemon.
+ *
+ * `oldestStartedAt` is the earliest counted run still inside the window; once it
+ * ages out, one slot frees up, which is what `retryAfterMs` reports.
+ */
+export function budgetVerdict(args: {
+  limit: number | null;
+  countInWindow: number;
+  oldestStartedAt: number | null;
+  now: number;
+  windowMs: number;
+}): { allowed: true } | { allowed: false; retryAfterMs: number } {
+  const { limit, countInWindow, oldestStartedAt, now, windowMs } = args;
+  if (limit === null) return { allowed: true };
+  if (countInWindow < limit) return { allowed: true };
+  const retryAfterMs =
+    oldestStartedAt === null ? windowMs : Math.max(0, oldestStartedAt + windowMs - now);
+  return { allowed: false, retryAfterMs };
 }
 
 function truncate(s: string): string {
@@ -79,6 +117,46 @@ export function reserveRun(
   if (!agent) {
     // No row to hang a ledger entry off (agent_id is a FK), so nothing recorded.
     throw new RunRefusedError('missing', `agent ${agentId} not found`);
+  }
+
+  // Cheapest and most absolute first.
+  if (isPaused()) {
+    const { reason } = getPauseState();
+    recordRefusal(agentId, meta, 'paused');
+    throw new RunRefusedError(
+      'paused',
+      reason ? `the helm daemon is paused (${reason})` : 'the helm daemon is paused',
+    );
+  }
+
+  const deployed = deployRefusal(agent);
+  if (deployed) {
+    recordRefusal(agentId, meta, deployed);
+    throw new RunRefusedError(
+      deployed,
+      deployed === 'deployed'
+        ? `"${agent.name}" is deployed to a remote and runs there — recall it to run it here`
+        : `"${agent.name}" is mid-transfer (${agent.deployState}) — try again once it settles`,
+    );
+  }
+
+  const now = Date.now();
+  const verdict = budgetVerdict({
+    limit: agent.runBudgetPerHour,
+    countInWindow: countRunsInWindow(agentId, BUDGET_WINDOW_MS, now),
+    oldestStartedAt: oldestCountedRunAt(agentId, BUDGET_WINDOW_MS, now),
+    now,
+    windowMs: BUDGET_WINDOW_MS,
+  });
+  if (!verdict.allowed) {
+    recordRefusal(agentId, meta, 'budget');
+    const mins = Math.ceil(verdict.retryAfterMs / 60_000);
+    throw new RunRefusedError(
+      'budget',
+      `"${agent.name}" has used its limit of ${agent.runBudgetPerHour} run(s) per hour — ` +
+        `next slot frees up in about ${mins} minute(s)`,
+      verdict.retryAfterMs,
+    );
   }
 
   const runId = randomUUID();
@@ -164,6 +242,42 @@ export function sweepInterruptedRuns(): number {
     )
     .run();
   return stale.length;
+}
+
+/** Start time of the earliest counted run still inside the window, if any. */
+export function oldestCountedRunAt(
+  agentId: string,
+  windowMs: number,
+  now = Date.now(),
+): number | null {
+  const since = new Date(now - windowMs);
+  const row = db
+    .select({ startedAt: runs.startedAt })
+    .from(runs)
+    .where(
+      and(
+        eq(runs.agentId, agentId),
+        gt(runs.startedAt, since),
+        inArray(runs.status, [...COUNTED_STATUSES]),
+      ),
+    )
+    .orderBy(runs.startedAt)
+    .limit(1)
+    .get();
+  return row ? new Date(row.startedAt).getTime() : null;
+}
+
+/** Current budget consumption, for the console and `helm agent budget`. */
+export function budgetUsage(
+  agentId: string,
+): { limit: number | null; used: number; windowMs: number } | null {
+  const agent = loadAgent(agentId);
+  if (!agent) return null;
+  return {
+    limit: agent.runBudgetPerHour,
+    used: countRunsInWindow(agentId, BUDGET_WINDOW_MS),
+    windowMs: BUDGET_WINDOW_MS,
+  };
 }
 
 /** Runs counted against the budget in the window ending now. */

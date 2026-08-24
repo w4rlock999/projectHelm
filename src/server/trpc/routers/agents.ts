@@ -8,6 +8,7 @@ import {
   resetAgentSession,
   updateAgentSessionRecall,
   updateAgentSessionScope,
+  updateAgentRunBudget,
   updateAgentSystemPrompt,
 } from '../../agents.ts';
 import { listRuns } from '../../runs.ts';
@@ -51,6 +52,9 @@ export const agentsRouter = router({
         systemPrompt: z.string().min(1).optional(),
         sessionScope: z.enum(['chat', 'agent']).optional(),
         sessionRecall: z.enum(['none', 'all']).optional(),
+        // null clears the cap. `undefined` (absent) leaves it untouched, which
+        // is why this is nullish rather than optional.
+        runBudgetPerHour: z.number().int().positive().nullish(),
       }),
     )
     .mutation(({ input }) => {
@@ -59,6 +63,8 @@ export const agentsRouter = router({
       if (input.systemPrompt) updateAgentSystemPrompt(input.id, input.systemPrompt);
       if (input.sessionScope) updateAgentSessionScope(input.id, input.sessionScope);
       if (input.sessionRecall) updateAgentSessionRecall(input.id, input.sessionRecall);
+      if (input.runBudgetPerHour !== undefined)
+        updateAgentRunBudget(input.id, input.runBudgetPerHour);
       return loadAgent(input.id)!;
     }),
 

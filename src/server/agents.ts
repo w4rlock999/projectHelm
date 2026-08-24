@@ -89,6 +89,17 @@ export function updateAgentSessionRecall(id: string, sessionRecall: 'none' | 'al
   syncAgentTools(id);
 }
 
+/**
+ * Rolling-window cap on turns from every source. null = unlimited.
+ *
+ * Enforced centrally in src/server/runs.ts, so it applies to heartbeats,
+ * inbound gateway messages and the console alike — a limit that only covered
+ * the unattended paths would not be a limit.
+ */
+export function updateAgentRunBudget(id: string, runBudgetPerHour: number | null): void {
+  db.update(agents).set({ runBudgetPerHour }).where(eq(agents.id, id)).run();
+}
+
 export function resetAgentSession(id: string): void {
   db.update(agents).set({ claudeSessionId: null }).where(eq(agents.id, id)).run();
 }

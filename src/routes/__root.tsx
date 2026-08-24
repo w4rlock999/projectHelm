@@ -4,6 +4,7 @@ import { TanStackDevtools } from '@tanstack/react-devtools';
 
 import appCss from '../styles.css?url';
 import { TRPCProvider } from '#/lib/trpc-provider';
+import { PausedBanner } from '#/components/PausedBanner';
 
 export const Route = createRootRoute({
   head: () => ({
@@ -36,7 +37,10 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <HeadContent />
       </head>
       <body>
-        <TRPCProvider>{children}</TRPCProvider>
+        <TRPCProvider>
+          <PausedBanner />
+          {children}
+        </TRPCProvider>
         <TanStackDevtools
           config={{
             position: 'bottom-right',

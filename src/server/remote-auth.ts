@@ -1,5 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { config } from './config.ts';
 import { paths } from './paths.ts';
 
 // Bearer auth for the headless daemon. Two tokens are accepted:
@@ -31,6 +32,9 @@ export function encodeBase58(buf: Uint8Array): string {
   }
   return out;
 }
+
+/** Which credential a request presented. See classifyBearer. */
+export type BearerPrincipal = 'internal' | 'pairing' | null;
 
 export const TOKEN_PREFIX = 'helm_rt_';
 
@@ -102,15 +106,48 @@ export function verifyBearer(
   header: string | null,
   overrides?: { tokenHash?: string | null; internalToken?: string },
 ): boolean {
-  if (!header) return false;
+  return classifyBearer(header, overrides) !== null;
+}
+
+/**
+ * Which principal a bearer header represents, or null if it authenticates
+ * nothing.
+ *
+ * The distinction matters because the internal token is handed to every spawned
+ * agent (`HELM_INTERNAL_TOKEN`), so "authenticated" does not mean "the operator".
+ * Endpoints that change what an agent is *allowed* to do — resuming a paused
+ * daemon, importing a bundle — must require 'pairing', or a budget-limited agent
+ * could simply lift its own limit.
+ */
+export function classifyBearer(
+  header: string | null,
+  overrides?: { tokenHash?: string | null; internalToken?: string },
+): BearerPrincipal {
+  if (!header) return null;
   const match = /^Bearer\s+(.+)$/i.exec(header);
-  if (!match) return false;
+  if (!match) return null;
   const token = match[1].trim();
 
   const internal = overrides?.internalToken ?? getInternalToken();
-  if (digestEqual(token, internal)) return true;
+  if (digestEqual(token, internal)) return 'internal';
 
   const tokenHash = overrides ? (overrides.tokenHash ?? null) : loadTokenHash();
-  if (!tokenHash) return false;
-  return digestEqual(hashToken(token), tokenHash);
+  if (!tokenHash) return null;
+  return digestEqual(hashToken(token), tokenHash) ? 'pairing' : null;
+}
+
+/**
+ * Guard for operator-only endpoints. Returns a 403 Response to return early, or
+ * null to proceed.
+ *
+ * No-op in local mode: no tokens exist there and the local console is already
+ * trusted, exactly as it is everywhere else in the codebase.
+ */
+export function requirePairing(request: Request): Response | null {
+  if (!config.headless) return null;
+  if (classifyBearer(request.headers.get('authorization')) === 'pairing') return null;
+  return Response.json(
+    { error: 'this endpoint requires the pairing token, not an agent token' },
+    { status: 403 },
+  );
 }

@@ -1,5 +1,10 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { deleteAgent, loadAgent, updateAgentSystemPrompt } from '../../server/agents.ts';
+import {
+  deleteAgent,
+  loadAgent,
+  updateAgentRunBudget,
+  updateAgentSystemPrompt,
+} from '../../server/agents.ts';
 import { listAgentTools } from '../../server/tools.ts';
 import { listAgentChats, listGateways } from '../../server/runtime/gateways.ts';
 import { listHeartbeats } from '../../server/runtime/heartbeats.ts';
@@ -26,6 +31,9 @@ export const Route = createFileRoute('/api/agents/$id/info')({
           hasSession: !!a.claudeSessionId,
           sessionScope: a.sessionScope,
           sessionRecall: a.sessionRecall,
+          runBudgetPerHour: a.runBudgetPerHour,
+          deployedTo: a.deployedTo,
+          deployState: a.deployState,
           systemPrompt: a.systemPrompt,
           tools: listAgentTools(a.id).map((t) => ({
             id: t.id,
@@ -64,16 +72,33 @@ export const Route = createFileRoute('/api/agents/$id/info')({
         if (!loadAgent(params.id)) {
           return Response.json({ error: 'agent not found' }, { status: 404 });
         }
-        let body: { systemPrompt?: string };
+        let body: { systemPrompt?: string; runBudgetPerHour?: number | null };
         try {
           body = (await request.json()) as typeof body;
         } catch {
           return Response.json({ error: 'invalid JSON' }, { status: 400 });
         }
-        if (!body.systemPrompt?.trim()) {
-          return Response.json({ error: 'systemPrompt is required' }, { status: 400 });
+
+        // Either field may be patched independently. `runBudgetPerHour: null`
+        // clears the cap, so absence (undefined) is the "leave alone" signal.
+        const patchesBudget = body.runBudgetPerHour !== undefined;
+        if (!body.systemPrompt?.trim() && !patchesBudget) {
+          return Response.json(
+            { error: 'systemPrompt or runBudgetPerHour is required' },
+            { status: 400 },
+          );
         }
-        updateAgentSystemPrompt(params.id, body.systemPrompt);
+        if (patchesBudget) {
+          const b = body.runBudgetPerHour;
+          if (b !== null && (!Number.isInteger(b) || (b as number) < 1)) {
+            return Response.json(
+              { error: 'runBudgetPerHour must be a positive integer, or null to clear' },
+              { status: 400 },
+            );
+          }
+          updateAgentRunBudget(params.id, b as number | null);
+        }
+        if (body.systemPrompt?.trim()) updateAgentSystemPrompt(params.id, body.systemPrompt);
         return Response.json({ ok: true, id: params.id });
       },
 

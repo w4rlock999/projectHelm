@@ -56,6 +56,34 @@ function enqueue<T>(agentId: string, task: () => Promise<T>): Promise<T> {
 }
 
 /**
+ * Wait for the agent's in-flight turn (and anything already queued behind it) to
+ * finish. Returns false on timeout.
+ *
+ * Only a *true* drain once the run gate is already shut for this agent — i.e.
+ * after `deployState` has been persisted — because nothing stops a new turn
+ * joining the chain otherwise. Ship relies on that ordering.
+ */
+export async function drainAgentRuns(agentId: string, timeoutMs = 120_000): Promise<boolean> {
+  const tail = agentChains.get(agentId);
+  if (!tail) return true;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<false>((resolve) => {
+    timer = setTimeout(() => resolve(false), timeoutMs);
+  });
+  try {
+    return await Promise.race([
+      tail.then(
+        () => true as const,
+        () => true as const,
+      ),
+      timeout,
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
  * Run one headless agent turn to completion and return the final assistant
  * text. Reuses the same `runClaude` primitive and `.ndjson` run logs as the SSE
  * chat route, persists the resolved session id, and serializes turns per agent.
