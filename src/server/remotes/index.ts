@@ -6,6 +6,7 @@ import { HELM_VERSION } from '../../version.ts';
 import type { RemoteInfo } from '../remote-info.ts';
 import { fetchRemoteInfo, RemoteError, setRemotePaused, type RemoteErrorKind } from './client.ts';
 import { decodeConnectCode } from './connect-code.ts';
+import { pendingOrphans, sweepRecallOrphans } from './orphans.ts';
 import { teardownTunnel } from './tunnel.ts';
 
 // The local remotes registry: CRUD over the `remotes` table plus the
@@ -93,6 +94,17 @@ export function removeRemote(id: string): boolean {
     );
   }
 
+  // Orphans are not a reason to refuse — a dead remote is exactly what you want
+  // to unregister — but say so, because the sweep can no longer reach them and
+  // their rows will sit unresolved from here on.
+  const orphans = pendingOrphans(id);
+  if (orphans.length > 0) {
+    console.warn(
+      `[helm] "${existing.name}" still holds ${orphans.length} recalled agent copy(ies) ` +
+        `(${orphans.map((o) => o.agentId).join(', ')}) — unregistering it means deleting them by hand`,
+    );
+  }
+
   teardownTunnel(id);
   db.delete(remotes).where(eq(remotes.id, id)).run();
   return true;
@@ -116,6 +128,13 @@ export async function pingRemote(id: string): Promise<PingResult | null> {
       .set({ lastSeenAt: new Date(), lastVersion: info.helmVersion, capabilities: info.harnesses })
       .where(eq(remotes.id, id))
       .run();
+    // A ping is the cheapest proof this remote is reachable, which makes it the
+    // natural retry trigger for any copy a recall failed to delete there —
+    // otherwise the only retry is a daemon restart. Fire-and-forget: an orphan
+    // is not this call's concern, and the sweep is silent when there are none.
+    void sweepRecallOrphans({ remoteId: id }).catch((err) =>
+      console.error('[helm] recall-orphan sweep failed:', String(err)),
+    );
     return { ok: true, info, warning: versionWarning(info.helmVersion) };
   } catch (err) {
     const kind = err instanceof RemoteError ? err.kind : 'ssh';

@@ -169,6 +169,43 @@ export const remotes = sqliteTable('remotes', {
     .default(sql`(unixepoch())`),
 });
 
+// Remote copies that a completed recall could not delete.
+//
+// The confirm-delete at the end of `recall` is the one step that may fail
+// without making the recall itself wrong: the local side already holds the
+// agent, and the remote copy is deactivated (its own deployState is still
+// 'recalling'), so nothing is double-polling. But nothing is cleaning it up
+// either — the recall has, by then, restored the local row with deployState and
+// deployedTo both back to null, so the agent row itself has no memory of which
+// remote is still holding a copy. That is what this table remembers.
+//
+// A table rather than a column on `agents`: an agent can strand a copy on
+// remote A, later ship to B and strand one there too, and a single column would
+// silently overwrite the first — the exact "nothing is lost quietly" property
+// this exists to provide.
+//
+// Neither column is a FK. `remotes`: an unregistered remote is precisely when
+// this row is the only remaining evidence that a copy is out there. `agents`:
+// deleting the agent locally does not delete the copy on the remote, so the
+// sweep must outlive it.
+export const recallOrphans = sqliteTable(
+  'recall_orphans',
+  {
+    id: text('id').primaryKey(),
+    agentId: text('agent_id').notNull(),
+    remoteId: text('remote_id').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    lastTriedAt: integer('last_tried_at', { mode: 'timestamp' }),
+    // Why the last attempt did not clear it. Surfaced in the boot log.
+    lastError: text('last_error'),
+  },
+  // One row per (agent, remote): re-recording an orphan updates the attempt
+  // rather than piling up a row per retry.
+  (t) => [uniqueIndex('recall_orphans_agent_remote_idx').on(t.agentId, t.remoteId)],
+);
+
 // Cron-scheduled prompts fired into the agent by the wrapper. The agent can
 // self-manage these via the built-in `heartbeat` tool.
 export const heartbeats = sqliteTable('heartbeats', {
@@ -258,6 +295,7 @@ export type Gateway = typeof gateways.$inferSelect;
 export type GatewayChat = typeof gatewaysChat.$inferSelect;
 export type Heartbeat = typeof heartbeats.$inferSelect;
 export type Remote = typeof remotes.$inferSelect;
+export type RecallOrphan = typeof recallOrphans.$inferSelect;
 export type Run = typeof runs.$inferSelect;
 export type NewRun = typeof runs.$inferInsert;
 export type Setting = typeof settings.$inferSelect;

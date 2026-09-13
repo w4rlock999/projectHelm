@@ -11,6 +11,7 @@ import { drainAgentRuns } from '../run.ts';
 import { drainAgentPollers, reconcileGateways } from '../runtime/gateways.ts';
 import { fetchRemoteInfo, RemoteError, type RemoteErrorKind } from './client.ts';
 import { getRemote } from './index.ts';
+import { recordRecallOrphan } from './orphans.ts';
 import {
   deleteRemoteAgent,
   downloadBundle,
@@ -392,12 +393,24 @@ async function runRecall(run: TransferRun): Promise<ShipOutcome> {
 
     // Confirm-delete on the remote. A failure here is untidy, not harmful: the
     // remote copy is deactivated (its own deployState is 'recalling'), so it is
-    // not polling. sweepRecallOrphans retries.
+    // not polling. It is recorded as an orphan, and sweepRecallOrphans retries
+    // it at boot and on the next successful ping of that remote.
     try {
-      await deleteRemoteAgent(remote, agentId);
-      step(run, 'done', 'removed from the remote');
+      const deleted = await deleteRemoteAgent(remote, agentId);
+      if (deleted.ok) {
+        step(run, 'done', 'removed from the remote');
+      } else {
+        // An `{ok:false}` body is a refusal, not a transport failure — and it
+        // does not throw. Treating it as success is how a stranded copy used to
+        // be reported as "removed from the remote".
+        const why = deleted.error ?? 'the remote refused the delete';
+        recordRecallOrphan(agentId, remoteId, why);
+        step(run, 'done', `recalled, but the remote copy still needs deleting: ${why}`);
+      }
     } catch (err) {
-      step(run, 'done', `recalled, but the remote copy still needs deleting: ${String(err)}`);
+      const why = err instanceof Error ? err.message : String(err);
+      recordRecallOrphan(agentId, remoteId, why);
+      step(run, 'done', `recalled, but the remote copy still needs deleting: ${why}`);
     }
     return { ok: true, agentId, remoteId };
   } catch (err) {
