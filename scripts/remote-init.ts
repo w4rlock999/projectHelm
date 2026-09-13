@@ -118,7 +118,10 @@ function installService(): void {
     stdio: ['pipe', 'ignore', 'inherit'],
   });
   if (tee.status !== 0) fail(`could not write ${UNIT_PATH} (sudo tee failed)`);
-  for (const args of [['daemon-reload'], ['enable', '--now', UNIT_NAME]]) {
+  // `enable --now` starts a stopped unit but does NOT restart a running one, so
+  // on a re-run — the way you'd apply a fixed unit file, or pick up a new
+  // build — the daemon would keep running the old one. Restart explicitly.
+  for (const args of [['daemon-reload'], ['enable', UNIT_NAME], ['restart', UNIT_NAME]]) {
     const r = spawnSync('sudo', ['systemctl', ...args], { stdio: 'inherit' });
     if (r.status !== 0) fail(`systemctl ${args.join(' ')} failed`);
   }
