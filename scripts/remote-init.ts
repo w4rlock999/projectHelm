@@ -85,6 +85,24 @@ function systemdAvailable(): boolean {
   return spawnSync('systemctl', ['--version'], { stdio: 'ignore' }).status === 0;
 }
 
+/**
+ * The PATH the daemon runs with. systemd's default omits ~/.local/bin, where
+ * Claude Code's native installer lives, so the directory of the `claude` that
+ * passed preflight is prepended explicitly — resolving it here, while a login
+ * shell's PATH is still in effect, is the only place that knows it.
+ */
+function servicePath(): string {
+  const dirs = [`${os.homedir()}/.local/bin`, '/usr/local/bin', '/usr/bin', '/bin'];
+  try {
+    const resolved = execFileSync('which', ['claude'], { timeout: 10_000 }).toString().trim();
+    if (resolved) dirs.unshift(path.dirname(resolved));
+  } catch {
+    // Preflight already proved `claude` runs; if `which` is missing we still
+    // have the two conventional locations below.
+  }
+  return [...new Set(dirs)].join(':');
+}
+
 function installService(): void {
   const template = readFileSync(
     path.join(repoRoot, 'deploy', 'helm-remote.service.template'),
@@ -93,6 +111,7 @@ function installService(): void {
   const unit = template
     .replaceAll('{{USER}}', os.userInfo().username)
     .replaceAll('{{APP_DIR}}', repoRoot)
+    .replaceAll('{{PATH}}', servicePath())
     .replaceAll('{{NODE_BIN}}', process.execPath);
   const tee = spawnSync('sudo', ['tee', UNIT_PATH], {
     input: unit,
@@ -114,6 +133,48 @@ function restartServiceIfInstalled(): void {
   const r = spawnSync('sudo', ['systemctl', 'restart', UNIT_NAME], { stdio: 'inherit' });
   if (r.status !== 0) fail(`systemctl restart ${UNIT_NAME} failed`);
   ok('daemon restarted with the new token');
+}
+
+/**
+ * Ask the daemon we just started what it thinks of itself.
+ *
+ * Init's own smoke test runs in a login shell, so it proves the OAuth token and
+ * nothing about the environment systemd hands the service. The two disagreed
+ * once already (PATH, and therefore `claude`), and the failure mode is silent:
+ * a green init, a running daemon, `authOk: false`, and ship refusing at
+ * preflight with a message pointing at the token instead of the unit. Warn
+ * rather than fail — the daemon may simply still be starting.
+ */
+async function verifyDaemon(helmPort: number, token: string): Promise<void> {
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${helmPort}/api/remote/info`, {
+        headers: { authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (res.ok) {
+        const info = (await res.json()) as {
+          harnesses?: { type: string; version: string | null; authOk: boolean }[];
+        };
+        const claude = info.harnesses?.find((h) => h.type === 'claude-code');
+        if (claude?.authOk) {
+          ok(`daemon answering on 127.0.0.1:${helmPort} (claude-code ${claude.version})`);
+        } else {
+          console.error(
+            `  ✘ the daemon is up but reports claude-code authOk=false — it cannot see a\n` +
+              `    working \`claude\` in the environment systemd gave it. Ship will refuse at\n` +
+              `    preflight until this is fixed. Check: systemctl show ${UNIT_NAME} -p Environment`,
+          );
+        }
+        return;
+      }
+    } catch {
+      // Not listening yet.
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  console.error(`  ✘ the daemon did not answer on 127.0.0.1:${helmPort} within 20s`);
 }
 
 // ── connect code ─────────────────────────────────────────────────────────────
@@ -269,6 +330,7 @@ async function printConnectCode(helmPort: number, token: string): Promise<void> 
     );
   } else {
     installService();
+    await verifyDaemon(helmPort, token);
   }
 
   // 7. Connect code.
