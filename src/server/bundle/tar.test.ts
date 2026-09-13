@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { gunzipSync } from 'node:zlib';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -19,6 +20,35 @@ beforeAll(() => {
 afterAll(() => {
   rmSync(root, { recursive: true, force: true });
 });
+
+/**
+ * Member names read straight from the tar headers of a .tgz — deliberately not
+ * via any `tar` binary, since the platform's own tar is what hides AppleDouble
+ * members on macOS. 512-byte blocks; name is the first 100 bytes, size is the
+ * octal field at offset 124.
+ */
+function tarHeaderNames(file: string): string[] {
+  const buf = gunzipSync(readFileSync(file));
+  const names: string[] = [];
+  for (let off = 0; off + 512 <= buf.length;) {
+    const name = buf
+      .subarray(off, off + 100)
+      .toString('utf8')
+      .replace(/\0.*$/, '');
+    if (!name) break; // two zero blocks end the archive
+    const size = parseInt(
+      buf
+        .subarray(off + 124, off + 136)
+        .toString('utf8')
+        .replace(/\0.*$/, '')
+        .trim() || '0',
+      8,
+    );
+    names.push(name);
+    off += 512 + Math.ceil(size / 512) * 512;
+  }
+  return names;
+}
 
 describe('tar round-trip', () => {
   it('archives a staging tree and restores it byte-for-byte', async () => {
@@ -49,6 +79,41 @@ describe('tar round-trip', () => {
     expect(readFileSync(path.join(out, 'workspace', 'notes.md'), 'utf8')).toBe('hello\n');
     expect(readFileSync(path.join(out, 'db.json'), 'utf8')).toBe('{"agent":{}}');
     expect(validateExtractedTree(out).files).toBe(5);
+  });
+
+  it('emits no AppleDouble sidecars, even when members carry xattrs', async () => {
+    // The failure this guards: on macOS, bsdtar writes an AppleDouble `._name`
+    // member beside every file carrying extended attributes — and on a Mac,
+    // `.helm` files carry com.apple.provenance. Those names are not in the
+    // bundle's top-level allowlist, so every ship from a Mac died at the remote
+    // with `unsafe member name: "._."`.
+    //
+    // The names are read straight out of the tar headers rather than via
+    // `listTarball`, because bsdtar *reabsorbs* AppleDouble members when it
+    // lists: on macOS `tar -t` shows a clean archive whether or not the sidecars
+    // are there, while GNU tar on the receiving end sees all of them. Listing
+    // with the platform's own tar is exactly the oracle that hid this bug.
+    const stage = path.join(root, 'xattr-stage');
+    mkdirSync(path.join(stage, 'workspace'), { recursive: true });
+    writeFileSync(path.join(stage, 'manifest.json'), '{"bundleVersion":1}');
+    writeFileSync(path.join(stage, 'db.json'), '{"agent":{}}');
+    writeFileSync(path.join(stage, 'workspace', 'notes.md'), 'hello\n');
+    if (process.platform === 'darwin') {
+      for (const target of [stage, path.join(stage, 'db.json')]) {
+        execFileSync('xattr', ['-w', 'com.apple.provenance', 'x', target]);
+      }
+    }
+
+    const tgz = path.join(root, 'xattr.tgz');
+    await createTarball(stage, tgz);
+
+    const names = tarHeaderNames(tgz);
+    expect(names).toContain('./db.json');
+    expect(names.filter((n) => n.split('/').some((p) => p.startsWith('._')))).toEqual([]);
+    // Note the raw headers also contain bsdtar's own `PaxHeader/...` entries.
+    // Those are metadata every tar consumes rather than presents as members —
+    // GNU tar only warns about the unknown keywords — so they are not checked
+    // here; the round-trip test above covers what the validator actually sees.
   });
 });
 
