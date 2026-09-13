@@ -57,6 +57,32 @@ function out(v) {
   console.log(JSON.stringify(v, null, 2));
 }
 
+// Poll a transfer to completion. A ship takes minutes, so this is opt-in
+// (--wait); the default is fire-and-report-once so the captain isn't blocked
+// inside a single Bash call.
+async function watchTransfer(agentId) {
+  let lastPhase = '';
+  for (let i = 0; i < 600; i++) {
+    const s = await get('/api/agents/' + agentId + '/ship');
+    const t = s.transfer;
+    if (t && t.phase !== lastPhase) {
+      lastPhase = t.phase;
+      const last = t.log[t.log.length - 1];
+      console.log('  ' + t.phase + (last ? ' — ' + last.message : ''));
+    }
+    if (t && t.outcome) {
+      out(t.outcome);
+      if (!t.outcome.ok) process.exit(1);
+      return;
+    }
+    await new Promise(function (r) {
+      setTimeout(r, 2000);
+    });
+  }
+  console.error('gave up waiting after 20 minutes; poll with: helm agent status ' + agentId);
+  process.exit(1);
+}
+
 function usage() {
   console.log(
     'helm — manage helmConsole\n' +
@@ -67,6 +93,9 @@ function usage() {
       '  helm tool ls\n' +
       '  helm remote ls\n' +
       '  helm remote ping <id>\n' +
+      '  helm agent runs <id> [--limit <n>]\n' +
+      '  helm system status\n' +
+      '  helm agent status <id>            # deploy state + transfer progress\n' +
       'write:\n' +
       '  helm agent new --name <n> --prompt|--prompt-file <p> [--model <m>]\n' +
       '  helm agent set-prompt <id> --prompt|--prompt-file <p>\n' +
@@ -78,7 +107,12 @@ function usage() {
       '  helm tool unassign <toolId> --agent <agentId>\n' +
       '  helm remote add --code <helm-connect:...> [--name <n>]\n' +
       '  helm remote add --ssh <user@host[:port]> --token <t> [--port <helmPort>] [--name <n>]\n' +
-      '  helm remote rm <id>',
+      '  helm remote rm <id>\n' +
+      '  helm remote pause <id> [--reason <r>] | helm remote resume <id>\n' +
+      '  helm agent budget <id> --per-hour <n|off>\n' +
+      '  helm agent ship <id> --remote <remoteId> [--without-data] [--wait]\n' +
+      '  helm agent recall <id> [--wait]\n' +
+      '  helm system pause [--reason <r>]   # resume needs the operator, not an agent',
   );
 }
 
@@ -129,6 +163,55 @@ function usage() {
       }
       await call('DELETE', '/api/agents/' + argv[2] + '/info');
       console.log('removed agent ' + argv[2]);
+    } else if (sub === 'runs') {
+      if (!argv[2]) {
+        console.error('usage: helm agent runs <id> [--limit <n>]');
+        process.exit(1);
+      }
+      const f = flags(argv.slice(3)).out;
+      const q = f.limit ? '?limit=' + encodeURIComponent(f.limit) : '';
+      out(await get('/api/agents/' + argv[2] + '/runs' + q));
+    } else if (sub === 'ship') {
+      const f = flags(argv.slice(3)).out;
+      if (!argv[2] || !f.remote) {
+        console.error('usage: helm agent ship <id> --remote <remoteId> [--without-data] [--wait]');
+        process.exit(1);
+      }
+      const started = await call('POST', '/api/agents/' + argv[2] + '/ship', {
+        remoteId: f.remote,
+        withoutData: f['without-data'] === 'true',
+      });
+      console.log('ship started (' + started.transferId + ')');
+      if (f.wait) await watchTransfer(argv[2]);
+      else out(await get('/api/agents/' + argv[2] + '/ship'));
+    } else if (sub === 'recall') {
+      if (!argv[2]) {
+        console.error('usage: helm agent recall <id> [--wait]');
+        process.exit(1);
+      }
+      const f = flags(argv.slice(3)).out;
+      const started = await call('POST', '/api/agents/' + argv[2] + '/ship', { recall: true });
+      console.log('recall started (' + started.transferId + ')');
+      if (f.wait) await watchTransfer(argv[2]);
+      else out(await get('/api/agents/' + argv[2] + '/ship'));
+    } else if (sub === 'status') {
+      if (!argv[2]) {
+        console.error('usage: helm agent status <id>');
+        process.exit(1);
+      }
+      out(await get('/api/agents/' + argv[2] + '/ship'));
+    } else if (sub === 'budget') {
+      const f = flags(argv.slice(3)).out;
+      if (!argv[2] || !f['per-hour']) {
+        console.error('usage: helm agent budget <id> --per-hour <n|off>');
+        process.exit(1);
+      }
+      const value = f['per-hour'] === 'off' ? null : Number(f['per-hour']);
+      if (value !== null && (!Number.isInteger(value) || value < 1)) {
+        console.error('--per-hour must be a positive integer, or "off"');
+        process.exit(1);
+      }
+      out(await call('PATCH', '/api/agents/' + argv[2] + '/info', { runBudgetPerHour: value }));
     } else {
       console.error('unknown: helm agent ' + (sub || ''));
       process.exit(1);
@@ -219,6 +302,18 @@ function usage() {
       const r = await call('POST', '/api/remotes', body);
       console.log('added remote ' + r.remote.id + ' (' + r.remote.name + ')');
       out(r.info);
+    } else if (sub === 'pause' || sub === 'resume') {
+      if (!argv[2]) {
+        console.error('usage: helm remote ' + sub + ' <id>');
+        process.exit(1);
+      }
+      const f = flags(argv.slice(3)).out;
+      out(
+        await call('POST', '/api/remotes/' + argv[2] + '/pause', {
+          paused: sub === 'pause',
+          reason: f.reason,
+        }),
+      );
     } else if (sub === 'ping') {
       if (!argv[2]) {
         console.error('usage: helm remote ping <id>');
@@ -234,6 +329,20 @@ function usage() {
       console.log('removed remote ' + argv[2]);
     } else {
       console.error('unknown: helm remote ' + (sub || ''));
+      process.exit(1);
+    }
+  } else if (cmd === 'system') {
+    if (sub === 'status') {
+      out(await get('/api/system/status'));
+    } else if (sub === 'pause') {
+      const f = flags(argv.slice(2)).out;
+      out(await call('POST', '/api/system/pause', f.reason ? { reason: f.reason } : {}));
+    } else if (sub === 'resume') {
+      // Only the operator can resume; an agent's token gets a 403 here by
+      // design, so it cannot lift a limit it was paused for.
+      out(await call('POST', '/api/system/resume', {}));
+    } else {
+      console.error('unknown: helm system ' + (sub || ''));
       process.exit(1);
     }
   } else {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  classifyBearer,
   encodeBase58,
   generatePairingToken,
   getInternalToken,
@@ -68,5 +69,32 @@ describe('verifyBearer', () => {
   it('rotation: a new hash invalidates the old token', () => {
     const rotated = hashToken(generatePairingToken());
     expect(verifyBearer(`Bearer ${token}`, { tokenHash: rotated })).toBe(false);
+  });
+});
+
+describe('classifyBearer', () => {
+  const internalToken = 'internal-token-abc';
+  const pairing = generatePairingToken();
+  const tokenHash = hashToken(pairing);
+
+  it('distinguishes the two principals', () => {
+    expect(classifyBearer(`Bearer ${internalToken}`, { tokenHash, internalToken })).toBe(
+      'internal',
+    );
+    expect(classifyBearer(`Bearer ${pairing}`, { tokenHash, internalToken })).toBe('pairing');
+  });
+
+  it('returns null for anything else', () => {
+    expect(classifyBearer(null, { tokenHash, internalToken })).toBe(null);
+    expect(classifyBearer('Bearer nope', { tokenHash, internalToken })).toBe(null);
+    expect(classifyBearer(pairing, { tokenHash, internalToken })).toBe(null);
+  });
+
+  // The point of the split: every spawned agent holds the internal token, so
+  // "authenticated" must not imply "may resume a paused daemon".
+  it('does not let an agent token pass as the operator', () => {
+    expect(classifyBearer(`Bearer ${internalToken}`, { tokenHash, internalToken })).not.toBe(
+      'pairing',
+    );
   });
 });

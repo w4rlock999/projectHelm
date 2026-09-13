@@ -8,6 +8,8 @@ import { loadAgent } from '../agents.ts';
 import { agentStore, runAgentTurn } from '../run.ts';
 import type { SessionStore } from '../run.ts';
 import { getMe, getUpdates, sendMessage } from '../gateways/telegram.ts';
+import { RunRefusedError } from '../runs.ts';
+import { localAgentIds } from '../deploy-state.ts';
 import type { Agent, Gateway, GatewayChat } from '../../db/schema.ts';
 
 // ── Gateway CRUD service (shared by tRPC router) ─────────────────────────────
@@ -191,6 +193,13 @@ export async function sendToChat(
 
 interface ActivePoller {
   abort: AbortController;
+  /**
+   * Resolves when pollLoop has actually exited. `abort()` alone is not a stop:
+   * the loop awaits runAgentTurn *inside* its update loop, so without this a
+   * caller cannot tell "aborted" from "still mid-turn, about to persist a new
+   * pollOffset". Ship needs a settled cursor before it snapshots the gateway.
+   */
+  done: Promise<void>;
 }
 
 // Stored on globalThis so HMR / repeated imports don't spawn duplicate loops.
@@ -199,12 +208,15 @@ const pollers: Map<string, ActivePoller> =
 
 /** Start pollers for enabled gateways, stop pollers for ones gone/disabled. */
 export function reconcileGateways(): void {
+  // Agents that are deployed or mid-transfer belong to another daemon; dropping
+  // them here is what stops two pollers holding one bot token.
+  const local = localAgentIds();
   const enabled = new Map(
     db
       .select()
       .from(gateways)
       .all()
-      .filter((g) => g.enabled)
+      .filter((g) => g.enabled && local.has(g.agentId))
       .map((g) => [g.id, g] as const),
   );
 
@@ -219,9 +231,73 @@ export function reconcileGateways(): void {
   for (const [id, gateway] of enabled) {
     if (!pollers.has(id)) {
       const abort = new AbortController();
-      pollers.set(id, { abort });
-      void pollLoop(gateway, abort.signal);
+      pollers.set(id, { abort, done: pollLoop(gateway, abort.signal) });
     }
+  }
+}
+
+/**
+ * Abort an agent's pollers and wait for the loops to actually exit, including
+ * any turn already in flight. Returns false on timeout.
+ *
+ * Ship's deactivate step needs this: `reconcileGateways()` only calls `abort()`
+ * and returns, which is a request to stop, not a stop.
+ */
+export async function drainAgentPollers(agentId: string, timeoutMs = 60_000): Promise<boolean> {
+  const mine = listGateways(agentId)
+    .map((g) => [g.id, pollers.get(g.id)] as const)
+    .filter((e): e is [string, ActivePoller] => Boolean(e[1]));
+  if (mine.length === 0) return true;
+
+  for (const [id, poller] of mine) {
+    poller.abort.abort();
+    pollers.delete(id);
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<false>((resolve) => {
+    timer = setTimeout(() => resolve(false), timeoutMs);
+  });
+  try {
+    const settled = await Promise.race([
+      Promise.all(mine.map(([, p]) => p.done)).then(() => true as const),
+      timeout,
+    ]);
+    return settled;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+// Rate limit on refusal notices, so a chatty user doesn't get one per message.
+// Process-local and best-effort by design — losing it on restart just means one
+// extra notice.
+const refusalNotices: Map<string, number> =
+  (globalThis as any).__helmRefusalNotices ??
+  ((globalThis as any).__helmRefusalNotices = new Map());
+const REFUSAL_NOTICE_INTERVAL_MS = 10 * 60_000;
+
+/** Best-effort "your message was not processed" reply. Never throws. */
+async function noticeRefusal(
+  gateway: Gateway,
+  chatId: string,
+  err: RunRefusedError,
+): Promise<void> {
+  console.error(`[helm] gateway ${gateway.id}: run refused (${err.reason})`);
+  const key = `${gateway.id}:${chatId}`;
+  const last = refusalNotices.get(key) ?? 0;
+  if (Date.now() - last < REFUSAL_NOTICE_INTERVAL_MS) return;
+  refusalNotices.set(key, Date.now());
+
+  const text =
+    err.reason === 'budget'
+      ? `I've hit my hourly run limit, so I couldn't process that. Try again in about ${Math.ceil((err.retryAfterMs ?? 0) / 60_000)} minute(s).`
+      : err.reason === 'paused'
+        ? "I'm paused right now, so I couldn't process that message."
+        : "I've moved to another host and am not answering here right now.";
+  try {
+    await sendMessage(gateway.token, chatId, text);
+  } catch (sendErr) {
+    console.error(`[helm] gateway ${gateway.id}: refusal notice failed:`, String(sendErr));
   }
 }
 
@@ -239,8 +315,18 @@ async function pollLoop(gateway: Gateway, signal: AbortSignal): Promise<void> {
     }
 
     for (const u of updates) {
+      // Checked before the cursor advances, not just at the top of the outer
+      // loop: on abort the remaining updates stay un-persisted, so pollOffset
+      // points at the first *unprocessed* update. That is the value a ship must
+      // carry to the remote — otherwise Telegram re-delivers there and the user
+      // gets duplicate replies. It also makes deactivation prompt instead of
+      // waiting out a whole batch of turns.
+      if (signal.aborted) break;
       offset = u.update_id + 1;
-      // Persist offset immediately so we never reprocess.
+      // Persist offset immediately so we never reprocess. Deliberately BEFORE
+      // the run: moving it after would replay an already-answered message if the
+      // process died in between, and duplicate replies are worse than the
+      // refusal notice below.
       db.update(gateways).set({ pollOffset: offset }).where(eq(gateways.id, gateway.id)).run();
 
       const msg = u.message;
@@ -282,6 +368,13 @@ async function pollLoop(gateway: Gateway, signal: AbortSignal): Promise<void> {
           chatId: String(msg.chat.id),
         });
       } catch (err) {
+        if (err instanceof RunRefusedError) {
+          // The cursor already moved, so this message is gone. Tell the human
+          // rather than dropping it silently; the 'refused' ledger row keeps the
+          // text either way.
+          await noticeRefusal(gateway, String(msg.chat.id), err);
+          continue;
+        }
         console.error(`[helm] agent run failed for gateway ${gateway.id}:`, String(err));
       }
     }

@@ -39,12 +39,20 @@ export function createAgent(input: CreateAgentInput): Agent {
     // ...and to no cross-session recall (each session is context-isolated).
     sessionRecall: 'none' as const,
     isOperator: false,
+    // Locally live and unbudgeted until a ship or an explicit budget says
+    // otherwise. Spelled out rather than left to the column defaults because
+    // this object is returned to the caller as the created Agent.
+    deployedTo: null,
+    deployState: null,
+    deployedAt: null,
+    deployError: null,
+    runBudgetPerHour: null,
     createdAt: new Date(),
   };
   db.insert(agents).values(row).run();
   // Materializes built-in tools (heartbeat) + writes CLAUDE.md with the tools block.
   syncAgentTools(id);
-  return row as Agent;
+  return row;
 }
 
 /** The user-facing fleet — excludes the operator (helmCaptain). */
@@ -81,11 +89,42 @@ export function updateAgentSessionRecall(id: string, sessionRecall: 'none' | 'al
   syncAgentTools(id);
 }
 
+/**
+ * Rolling-window cap on turns from every source. null = unlimited.
+ *
+ * Enforced centrally in src/server/runs.ts, so it applies to heartbeats,
+ * inbound gateway messages and the console alike — a limit that only covered
+ * the unattended paths would not be a limit.
+ */
+export function updateAgentRunBudget(id: string, runBudgetPerHour: number | null): void {
+  db.update(agents).set({ runBudgetPerHour }).where(eq(agents.id, id)).run();
+}
+
 export function resetAgentSession(id: string): void {
   db.update(agents).set({ claudeSessionId: null }).where(eq(agents.id, id)).run();
 }
 
-export function deleteAgent(id: string): void {
+/**
+ * Thrown when an operation would strand an agent that lives on a remote.
+ * The local row holds the only record of `deployedTo`, so deleting it orphans a
+ * live remote agent permanently — it keeps polling Telegram with nothing left
+ * here that knows it exists.
+ */
+export class DeployedAgentError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DeployedAgentError';
+  }
+}
+
+export function deleteAgent(id: string, opts: { force?: boolean } = {}): void {
+  const agent = loadAgent(id);
+  if (agent && agent.deployState !== null && !opts.force) {
+    throw new DeployedAgentError(
+      `"${agent.name}" is ${agent.deployState} on a remote — recall it before deleting, ` +
+        `or the remote copy keeps running with nothing here tracking it`,
+    );
+  }
   db.delete(agents).where(eq(agents.id, id)).run();
   rmSync(paths.agentDir(id), { recursive: true, force: true });
 }

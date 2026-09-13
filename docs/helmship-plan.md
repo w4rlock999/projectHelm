@@ -1,6 +1,7 @@
 # Helmship — remote deployment plan
 
-_Drafted 2026-07-13. Status: **M-remote-1 implemented** (2026-07-17); M-remote-2 is the next build target._
+_Drafted 2026-07-13. Status: **M-remote-2 implemented** (2026-08-24); M-remote-3 is the next
+build target. Not yet exercised against a real VPS end to end._
 
 Helmship lets you take an agent built locally in HelmConsole and deploy it to a
 "remote deployment environment" — a VPS running the helm daemon headlessly —
@@ -162,9 +163,13 @@ A tarball, `manifest.json` + payload dirs:
   the data plane (which travels). Same nulling applies to
   `gateways_chat.claude_session_id`.
 - **Tools**: full definitions (name, description, interpreter, source) of the
-  agent's assigned library tools. Import upserts into the remote library by
-  name + content hash; a name collision with different source fails the import
-  (explicit, no silent overwrite).
+  agent's assigned library tools. Import is **insert-or-reuse-or-fail** by
+  name + content hash — _not_ an upsert (corrected during implementation:
+  updating a shared library tool re-materializes every other agent using it, so
+  an upsert would let a bundle silently rewrite unrelated agents). A name
+  collision with different source fails; so does an ambiguous name, since
+  `tools.name` has no unique index. The content hash is recomputed on import,
+  never trusted from the bundle.
 - **Gateways** rows incl. bot token and `pollOffset` (so the remote poller
   continues the getUpdates cursor), plus `gateways_chat` rows (chat routing,
   titles, status).
@@ -181,16 +186,37 @@ A tarball, `manifest.json` + payload dirs:
    mid-run.
 2. Local: **deactivate** — stop the agent's gateway poller, unschedule its
    heartbeats (poller conflict window must close before remote activation).
-3. Local: export bundle → `POST /api/remote/import` (multipart, through the
-   tunnel).
+3. Local: export bundle → `POST /api/remote/import` (raw `application/octet-stream`
+   through the tunnel, with `content-length` and `x-helm-bundle-sha256` headers).
+   **Corrected during implementation:** multipart needs a parser we don't ship,
+   and `Request.formData()` buffers the whole bundle in memory, defeating every
+   size cap on a small VPS.
 4. Remote: validate manifest, import inside one transaction, materialize
    workspace, start poller + schedule heartbeats, run a smoke turn
    (`claude -p ping` in the agent workspace), respond OK.
-5. Local: mark the agent deployed — new column `agents.deployedTo`
-   (nullable text, remote id). The heartbeat scheduler and
-   `reconcileGateways()` skip agents with `deployedTo` set; runs against them
-   are rejected.
+5. Local: mark the agent deployed.
 6. Any failure in 3–4 → local reactivates (rollback), surfaces the error.
+
+**Corrected during implementation — steps 0 and 7 below replace 5 and 6:**
+
+0. The durable claim happens **first**, before deactivation: one conditional
+   `UPDATE agents SET deployState='shipping' WHERE deployState IS NULL`, which is
+   simultaneously the mutex, the run-gate close, and the crash marker. With the
+   flag written at step 5 instead, a crash anywhere in 2–4 restarts with the
+   agent fully live locally while the remote may also be live — two pollers on
+   one bot token, duplicate replies to everything.
+1. Rollback is only safe in two of three cases. Failure before the remote
+   committed, or an explicit `{ok:false}` (the remote self-rolls-back before
+   answering, so it is provably clean) → reactivate. But if the connection died
+   **after** the remote committed and before its response arrived, the outcome is
+   unknown, and reactivating is precisely the move that creates the
+   double-poller. That case probes the remote with backoff and, failing that,
+   marks the agent `'stranded'` for an operator decision.
+
+State lives in `agents.deployState` (`'shipping' | 'deployed' | 'recalling' |
+'stranded'`, null = locally live) plus `deployedTo` / `deployedAt` /
+`deployError`. The heartbeat tick, `reconcileGateways()` and the run gate all
+filter on it.
 
 `recall` is the same flow in reverse (remote exports + deactivates, local
 imports + reactivates, remote deletes on confirmation).
@@ -198,8 +224,11 @@ imports + reactivates, remote deletes on confirmation).
 ### Deployed-agent visibility
 
 v1 of proxying is deliberately thin: the agent detail page for a deployed
-agent shows remote status, heartbeat list, and a recent-runs/log tail fetched
-through the tunnel (`GET /api/remote/agents/:id/status` on the daemon).
+agent shows remote status, heartbeat list, and recent runs fetched through the
+tunnel (`GET /api/remote/agents/:id/status` on the daemon). Recall needs a
+matching `POST /api/remote/agents/:id/export` — missing from the original
+endpoint list, and without it `recall` has no wire. Note a freshly shipped
+agent's run list is empty until its first remote run, since logs don't travel.
 Full management of a deployed agent = recall it, edit, re-ship. Deep
 proxy-editing is a later milestone if it earns its keep.
 
@@ -209,10 +238,20 @@ An unattended heartbeat agent on a VPS can burn the whole Claude subscription
 overnight; this failure mode arrives with remote deploy, so the guard does too:
 
 - `agents.runBudgetPerHour` (nullable int) — enforced centrally in
-  `src/server/run.ts` for all run sources (heartbeat, gateway, console);
-  exceeded → run refused + logged, heartbeat stays scheduled.
+  `src/server/runs.ts` for all run sources (heartbeat, gateway, console);
+  exceeded → run refused + logged, heartbeat stays scheduled. The window is
+  **rolling**, not a clock-hour reset: a reset satisfies "2 runs/hour" while
+  permitting 2 at :59 and 2 at :00, which is the burst being guarded against.
+  Admission _reserves_ a slot rather than merely checking, or a batch of
+  simultaneous triggers would all pass one check. Refused and interrupted rows
+  are excluded from the count, or the window would stay permanently full.
 - Daemon-wide pause: `POST /api/remote/pause` / `resume` (and a console
-  button) — stops accepting new runs without killing the process.
+  button) — stops accepting new runs without killing the process. **Persisted**,
+  not in-memory: systemd restarts the unit on failure, so an in-process flag
+  would lift itself during the crash-loop it was meant to stop.
+- Pause is unprivileged, resume is not. Every spawned agent holds
+  `HELM_INTERNAL_TOKEN`, so without splitting the principals an agent paused for
+  burning budget could simply un-pause itself.
 
 ### Acceptance criteria
 
@@ -277,7 +316,25 @@ Explicitly out of v1, in rough priority order:
 
 - Connect-code ergonomics: is pasting one opaque string better than three
   fields, or should the console offer both from day one? (Currently: both.)
-- Should `ship --without-data` be the default for agents with large stores?
+- ~~Should `ship --without-data` be the default for agents with large stores?~~
+  **Settled in M-remote-2: no.** Ship is a move, so excluding the data plane by
+  default would make silent data loss the behaviour of the headline feature —
+  and since sessions can't travel, the data plane is the only continuity a
+  shipped agent has. `--without-data` stays an explicit opt-out.
+
+## Known gaps after M-remote-2
+
+- **Not yet exercised against a real VPS.** Export/import is covered by a
+  round-trip test against a real SQLite database, and the endpoints' guards are
+  verified live, but no bundle has crossed an actual SSH tunnel. The acceptance
+  criteria above still need a run against real hardware.
+- The tunneled console SPA still 401s: the browser tRPC client sends no
+  `Authorization` header, so a remote daemon's own UI is unusable even though it
+  is served. Administering a remote means the local console, the `helm` CLI, or
+  curl.
+- No `remote:init --reauth`: an expired `CLAUDE_CODE_OAUTH_TOKEN` on the VPS is
+  _detected_ (`authOk: false`, and ship preflight refuses on it) but recovering
+  still means editing `.helm/remote.env` and restarting the unit by hand.
   (Currently: data travels by default.)
 - Provisioning skill distribution: repo-cloned vs curl-able bundle vs npm
   package. Decide when M3 starts.

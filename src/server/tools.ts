@@ -4,7 +4,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '../db/index.ts';
 import { agents, agentTools, gateways, tools } from '../db/schema.ts';
 import { paths } from './paths.ts';
-import type { Tool } from '../db/schema.ts';
+import type { Agent, Tool } from '../db/schema.ts';
 // Built-in tool scripts live as real files under builtin-tools/ and are inlined
 // here as text at build time (Vite `?raw`). They are self-contained standalone
 // scripts run by the agent; per-agent values (HELM_AGENT_ID) and the daemon URL
@@ -138,6 +138,21 @@ export function unassignTool(agentId: string, toolId: string): void {
 
 // ── Materialization ─────────────────────────────────────────────────────────
 
+/**
+ * Everything materialization needs about an agent. Normally read from the
+ * database, but the bundle importer supplies it directly: it must write
+ * `workspace/tools/` and `CLAUDE.md` into a quarantine directory from the
+ * *resolved* tool set BEFORE any row is committed, so there is never an instant
+ * where the schedulers can see an agent whose workspace is half-built.
+ */
+export interface MaterializeSpec {
+  agent: Pick<Agent, 'systemPrompt' | 'sessionScope' | 'sessionRecall' | 'isOperator'>;
+  tools: Tool[];
+  hasGateway: boolean;
+  /** Target workspace. Defaults to the agent's real one. */
+  workspaceDir?: string;
+}
+
 /** True if the agent has a Telegram gateway (so it gets a send-telegram tool). */
 function agentHasGateway(agentId: string): boolean {
   return db.select().from(gateways).where(eq(gateways.agentId, agentId)).all().length > 0;
@@ -148,8 +163,9 @@ function agentHasGateway(agentId: string): boolean {
  * tool assigned to this agent. The directory is cleared first so unassigned/
  * deleted tools don't linger.
  */
-export function materializeAgentTools(agentId: string): void {
-  const dir = paths.agentToolsDir(agentId);
+export function materializeAgentTools(agentId: string, spec?: MaterializeSpec): void {
+  const workspaceDir = spec?.workspaceDir ?? paths.agentWorkspaceDir(agentId);
+  const dir = `${workspaceDir}/tools`;
   try {
     for (const entry of readdirSync(dir)) rmSync(`${dir}/${entry}`, { force: true });
   } catch {
@@ -157,7 +173,7 @@ export function materializeAgentTools(agentId: string): void {
   }
   mkdirSync(dir, { recursive: true });
 
-  const agent = db.select().from(agents).where(eq(agents.id, agentId)).get();
+  const agent = spec?.agent ?? db.select().from(agents).where(eq(agents.id, agentId)).get();
 
   if (agent?.isOperator) {
     // helmCaptain: the helm CLI to inspect the fleet (read-only in part 1).
@@ -166,13 +182,13 @@ export function materializeAgentTools(agentId: string): void {
     // Built-in: heartbeat self-config (always present on regular agents).
     writeExecutable(`${dir}/heartbeat`, heartbeatToolSource);
     // Built-in: send-telegram (only when a gateway exists).
-    if (agentHasGateway(agentId)) {
+    if (spec ? spec.hasGateway : agentHasGateway(agentId)) {
       writeExecutable(`${dir}/send-telegram`, sendTelegramToolSource);
     }
   }
 
   // Assigned library tools (apply to both operator and regular agents).
-  for (const tool of listAgentTools(agentId)) {
+  for (const tool of spec?.tools ?? listAgentTools(agentId)) {
     const shebang = SHEBANGS[tool.interpreter] ?? `#!/usr/bin/env ${tool.interpreter}`;
     const body = tool.source.startsWith('#!') ? tool.source : `${shebang}\n${tool.source}`;
     writeExecutable(`${dir}/${toolFileName(tool.name)}`, body);
@@ -185,20 +201,20 @@ function writeExecutable(path: string, contents: string): void {
 }
 
 /** Regenerate workspace/tools + CLAUDE.md for an agent. Call after any change. */
-export function syncAgentTools(agentId: string): void {
-  materializeAgentTools(agentId);
-  renderClaudeMd(agentId);
+export function syncAgentTools(agentId: string, spec?: MaterializeSpec): void {
+  materializeAgentTools(agentId, spec);
+  renderClaudeMd(agentId, spec);
 }
 
 // ── CLAUDE.md rendering ─────────────────────────────────────────────────────
 
 /** Compose CLAUDE.md = agent system prompt + a managed tools block. */
-export function renderClaudeMd(agentId: string): void {
-  const agent = db.select().from(agents).where(eq(agents.id, agentId)).get();
+export function renderClaudeMd(agentId: string, spec?: MaterializeSpec): void {
+  const agent = spec?.agent ?? db.select().from(agents).where(eq(agents.id, agentId)).get();
   if (!agent) return;
 
-  const custom = listAgentTools(agentId);
-  const hasGateway = agentHasGateway(agentId);
+  const custom = spec?.tools ?? listAgentTools(agentId);
+  const hasGateway = spec ? spec.hasGateway : agentHasGateway(agentId);
 
   const lines: string[] = [TOOLS_BLOCK_START, '', '## Tools available to you', ''];
   lines.push(
@@ -324,6 +340,7 @@ export function renderClaudeMd(agentId: string): void {
   const block = lines.join('\n');
 
   const claudeMd = `${agent.systemPrompt.trim()}\n\n${block}\n`;
-  mkdirSync(paths.agentWorkspaceDir(agentId), { recursive: true });
-  writeFileSync(paths.agentClaudeMd(agentId), claudeMd);
+  const workspaceDir = spec?.workspaceDir ?? paths.agentWorkspaceDir(agentId);
+  mkdirSync(workspaceDir, { recursive: true });
+  writeFileSync(`${workspaceDir}/CLAUDE.md`, claudeMd);
 }

@@ -1,10 +1,10 @@
 import { createWriteStream, mkdirSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
 import { runClaude } from './adapter/claude.ts';
 import { agentRuntime, loadAgent, updateAgentSessionId } from './agents.ts';
 import { config } from './config.ts';
 import { paths, SHARED_SESSION_KEY } from './paths.ts';
 import { getInternalToken } from './remote-auth.ts';
+import { markRunErrored, markRunFinished, markRunStarted, reserveRun } from './runs.ts';
 import type { ClaudeEvent } from './adapter/types.ts';
 import type { Agent } from '../db/schema.ts';
 
@@ -56,6 +56,34 @@ function enqueue<T>(agentId: string, task: () => Promise<T>): Promise<T> {
 }
 
 /**
+ * Wait for the agent's in-flight turn (and anything already queued behind it) to
+ * finish. Returns false on timeout.
+ *
+ * Only a *true* drain once the run gate is already shut for this agent — i.e.
+ * after `deployState` has been persisted — because nothing stops a new turn
+ * joining the chain otherwise. Ship relies on that ordering.
+ */
+export async function drainAgentRuns(agentId: string, timeoutMs = 120_000): Promise<boolean> {
+  const tail = agentChains.get(agentId);
+  if (!tail) return true;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<false>((resolve) => {
+    timer = setTimeout(() => resolve(false), timeoutMs);
+  });
+  try {
+    return await Promise.race([
+      tail.then(
+        () => true as const,
+        () => true as const,
+      ),
+      timeout,
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
  * Run one headless agent turn to completion and return the final assistant
  * text. Reuses the same `runClaude` primitive and `.ndjson` run logs as the SSE
  * chat route, persists the resolved session id, and serializes turns per agent.
@@ -84,17 +112,27 @@ export function runAgentTurn(
     onRunId?: (runId: string) => void;
   } = {},
 ): Promise<AgentTurnResult> {
+  // Admission control runs BEFORE enqueue, so a refusal is immediate instead of
+  // waiting out an in-flight turn it was never going to join. reserveRun also
+  // *claims* the slot, which is what keeps a batch of simultaneous triggers from
+  // all passing the same budget check.
+  const source = opts.source ?? 'manual';
+  const { runId } = reserveRun(agentId, { source, prompt });
+  // Fires at reservation rather than turn start — strictly better for the SSE
+  // chat route, which can emit its `open` event without waiting in line.
+  opts.onRunId?.(runId);
+
   return enqueue(agentId, async () => {
     const agent = loadAgent(agentId);
-    if (!agent) throw new Error(`agent ${agentId} not found`);
+    if (!agent) {
+      markRunErrored(runId, `agent ${agentId} not found`);
+      throw new Error(`agent ${agentId} not found`);
+    }
+    markRunStarted(runId);
 
-    const runId = randomUUID();
-    opts.onRunId?.(runId);
     mkdirSync(paths.agentLogsDir(agent.id), { recursive: true });
     const logStream = createWriteStream(paths.agentLogFile(agent.id, runId), { flags: 'a' });
-    logStream.write(
-      JSON.stringify({ type: 'helm_meta', source: opts.source ?? 'manual', prompt, runId }) + '\n',
-    );
+    logStream.write(JSON.stringify({ type: 'helm_meta', source, prompt, runId }) + '\n');
 
     const session = opts.session ?? agentStore(agent);
     let text = '';
@@ -162,7 +200,11 @@ export function runAgentTurn(
           }
         },
       });
+      markRunFinished(runId, { code, isError, text });
       return { runId, text, sessionId, code, isError };
+    } catch (err) {
+      markRunErrored(runId, err instanceof Error ? err.message : String(err));
+      throw err;
     } finally {
       logStream.end();
     }

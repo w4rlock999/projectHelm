@@ -5,20 +5,31 @@ import { ChatView } from '#/components/chat/ChatView';
 import { ToolsPanel } from '#/components/agent/ToolsPanel';
 import { GatewaysPanel } from '#/components/agent/GatewaysPanel';
 import { HeartbeatsPanel } from '#/components/agent/HeartbeatsPanel';
+import { RunsPanel } from '#/components/agent/RunsPanel';
+import { ShipDialog } from '#/components/agent/ShipDialog';
+import { DeployBanner } from '#/components/agent/DeployBanner';
 import { trpc } from '#/lib/trpc';
 
 export const Route = createFileRoute('/agents/$id')({ component: AgentPage });
 
-const TABS = ['Chat', 'Tools', 'Gateways', 'Heartbeats'] as const;
+const TABS = ['Chat', 'Runs', 'Tools', 'Gateways', 'Heartbeats'] as const;
 type Tab = (typeof TABS)[number];
 
 function AgentPage() {
   const { id } = Route.useParams();
   const [promptOpen, setPromptOpen] = useState(false);
+  const [shipOpen, setShipOpen] = useState(false);
   const [tab, setTab] = useState<Tab>('Chat');
 
   const utils = trpc.useUtils();
   const { data: agent, error } = trpc.agents.get.useQuery({ id });
+  const recallMutation = trpc.ship.recall.useMutation({
+    onSuccess: () => {
+      utils.agents.get.invalidate({ id });
+      utils.ship.status.invalidate({ agentId: id });
+    },
+    onError: (err) => alert(err.message),
+  });
   const resetMutation = trpc.agents.resetSession.useMutation({
     onSuccess: () => {
       utils.agents.get.invalidate({ id });
@@ -79,6 +90,27 @@ function AgentPage() {
           >
             Reset session
           </Button>
+          {agent.deployState === null ? (
+            <Button variant="outline" size="sm" onClick={() => setShipOpen(true)}>
+              Ship…
+            </Button>
+          ) : agent.deployState === 'deployed' ? (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={recallMutation.isPending}
+              onClick={() => {
+                if (
+                  confirm(
+                    `Recall "${agent.name}" from its remote? It will stop running there and resume here.`,
+                  )
+                )
+                  recallMutation.mutate({ agentId: agent.id });
+              }}
+            >
+              {recallMutation.isPending ? 'Recalling…' : 'Recall'}
+            </Button>
+          ) : null}
         </div>
       </header>
 
@@ -90,6 +122,8 @@ function AgentPage() {
           <pre className="text-xs leading-relaxed whitespace-pre-wrap">{agent.systemPrompt}</pre>
         </section>
       ) : null}
+
+      <DeployBanner agent={agent} />
 
       <nav className="mb-4 flex gap-1 border-b">
         {TABS.map((t) => (
@@ -108,12 +142,23 @@ function AgentPage() {
         ))}
       </nav>
 
-      {tab === 'Chat' && (
-        <ChatView agent={agent} onSessionAppeared={() => utils.agents.get.invalidate({ id })} />
-      )}
+      {tab === 'Chat' &&
+        (agent.deployState === null ? (
+          <ChatView agent={agent} onSessionAppeared={() => utils.agents.get.invalidate({ id })} />
+        ) : (
+          // runAgentTurn would refuse anyway; saying so beats a red SSE error.
+          <p className="text-muted-foreground rounded-md border border-dashed p-12 text-center text-sm">
+            This agent isn't running on this machine right now. Recall it to chat with it.
+          </p>
+        ))}
+      {tab === 'Runs' && <RunsPanel agentId={agent.id} />}
       {tab === 'Tools' && <ToolsPanel agentId={agent.id} />}
       {tab === 'Gateways' && <GatewaysPanel agentId={agent.id} />}
       {tab === 'Heartbeats' && <HeartbeatsPanel agentId={agent.id} />}
+
+      {shipOpen && (
+        <ShipDialog agentId={agent.id} agentName={agent.name} onClose={() => setShipOpen(false)} />
+      )}
     </div>
   );
 }

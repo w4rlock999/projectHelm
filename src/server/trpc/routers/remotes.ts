@@ -1,6 +1,13 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import { addRemote, listRemotes, pingRemote, removeRemote } from '../../remotes/index.ts';
+import {
+  addRemote,
+  agentsDeployedTo,
+  listRemotes,
+  pauseRemote,
+  pingRemote,
+  removeRemote,
+} from '../../remotes/index.ts';
 import { publicProcedure, router } from '../init.ts';
 
 export const remotesRouter = router({
@@ -30,9 +37,37 @@ export const remotesRouter = router({
     }),
 
   remove: publicProcedure.input(z.object({ id: z.string().uuid() })).mutation(({ input }) => {
-    if (!removeRemote(input.id)) throw new TRPCError({ code: 'NOT_FOUND' });
+    try {
+      if (!removeRemote(input.id)) throw new TRPCError({ code: 'NOT_FOUND' });
+    } catch (err) {
+      if (err instanceof TRPCError) throw err;
+      // Agents are still deployed there — status, not a crash.
+      throw new TRPCError({
+        code: 'CONFLICT',
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
     return { id: input.id };
   }),
+
+  /** Agents this helm believes live on a given remote. */
+  deployedAgents: publicProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .query(({ input }) => agentsDeployedTo(input.id)),
+
+  setPaused: publicProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        paused: z.boolean(),
+        reason: z.string().max(500).optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const result = await pauseRemote(input.id, input.paused, input.reason);
+      if (!result) throw new TRPCError({ code: 'NOT_FOUND' });
+      return result;
+    }),
 
   ping: publicProcedure.input(z.object({ id: z.string().uuid() })).mutation(async ({ input }) => {
     const result = await pingRemote(input.id);

@@ -29,8 +29,10 @@ function Home() {
   const [filter, setFilter] = useState<FleetFilter>('all');
   const [theme, setTheme] = useTheme();
 
+  // "Deployed" means running on a remote, not "has a session" — the latter was
+  // a placeholder from before agents could be shipped anywhere.
   const visible = (agents ?? []).filter((a) =>
-    filter === 'deployed' ? Boolean(a.claudeSessionId) : true,
+    filter === 'deployed' ? Boolean(a.deployedTo) : true,
   );
 
   return (

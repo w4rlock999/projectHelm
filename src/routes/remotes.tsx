@@ -17,7 +17,11 @@ function RemotesPage() {
   const pingMutation = trpc.remotes.ping.useMutation();
   const removeMutation = trpc.remotes.remove.useMutation({
     onSuccess: () => utils.remotes.list.invalidate(),
+    // Removing a remote that still hosts agents is refused server-side — say so
+    // rather than failing silently.
+    onError: (err) => alert(err.message),
   });
+  const pauseMutation = trpc.remotes.setPaused.useMutation();
 
   const ping = (id: string) => {
     setPings((p) => ({ ...p, [id]: 'pending' }));
@@ -84,6 +88,13 @@ function RemotesPage() {
                   removeMutation.mutate({ id: r.id });
               }}
               removing={removeMutation.isPending}
+              pausing={pauseMutation.isPending && pauseMutation.variables?.id === r.id}
+              onSetPaused={(paused) => {
+                pauseMutation.mutate(
+                  { id: r.id, paused, reason: paused ? 'paused from the console' : undefined },
+                  { onSuccess: () => ping(r.id) },
+                );
+              }}
             />
           ))}
         </ul>
@@ -100,12 +111,16 @@ function RemoteRow({
   onPing,
   onRemove,
   removing,
+  onSetPaused,
+  pausing,
 }: {
   remote: Remote;
   ping: PingState | undefined;
   onPing: () => void;
   onRemove: () => void;
   removing: boolean;
+  onSetPaused: (paused: boolean) => void;
+  pausing: boolean;
 }) {
   const dot =
     ping === 'pending' || ping === undefined
@@ -138,8 +153,14 @@ function RemoteRow({
               </span>
             ))}
             {info ? ` · ${info.agentCount} agent${info.agentCount === 1 ? '' : 's'}` : ''}
+            {info?.deployedAgentCount ? ` (${info.deployedAgentCount} deployed)` : ''}
             {!info && lastSeen ? ` · last seen ${lastSeen.toLocaleString()}` : ''}
           </p>
+          {info?.paused && (
+            <p className="mt-1 text-sm text-amber-600">
+              Runs are paused on this remote — its heartbeats and gateways accept nothing.
+            </p>
+          )}
           {ping && ping !== 'pending' && !ping.ok && (
             <p className="text-destructive mt-1 text-sm">
               [{ping.kind}] {ping.error}
@@ -150,6 +171,16 @@ function RemoteRow({
           )}
         </div>
         <div className="flex shrink-0 gap-2">
+          {info?.paused !== undefined && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={pausing}
+              onClick={() => onSetPaused(!info.paused)}
+            >
+              {pausing ? '…' : info.paused ? 'Resume' : 'Pause'}
+            </Button>
+          )}
           <Button variant="outline" size="sm" disabled={ping === 'pending'} onClick={onPing}>
             {ping === 'pending' ? 'Pinging…' : 'Ping'}
           </Button>
