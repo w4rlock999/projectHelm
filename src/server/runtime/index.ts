@@ -1,3 +1,4 @@
+import { sweepRecallOrphans } from '../remotes/orphans.ts';
 import { recoverInterruptedTransfers } from '../remotes/ship.ts';
 import { sweepInterruptedRuns } from '../runs.ts';
 import { reconcileGateways } from './gateways.ts';
@@ -26,6 +27,11 @@ export function ensureRuntimeStarted(): void {
     // guard flag, which would make the runtime start over on every request.
     void recoverInterruptedTransfers().catch((err) =>
       console.error('[helm] transfer recovery failed:', String(err)),
+    );
+    // A recall whose confirm-delete failed left a full copy of the agent on the
+    // remote. Same fire-and-forget shape, and for the same reason.
+    void sweepRecallOrphans().catch((err) =>
+      console.error('[helm] recall-orphan sweep failed:', String(err)),
     );
     console.log('[helm] runtime started (heartbeat scheduler + gateway pollers)');
   } catch (err) {
