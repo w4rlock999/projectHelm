@@ -192,14 +192,15 @@ function installService(): void {
   ok(`systemd unit installed and started (${UNIT_NAME})`);
 }
 
-function restartServiceIfInstalled(): void {
+/** @param what — what the restart picks up, for the messages ("the new token", "Claude Code 2.1.277"). */
+function restartServiceIfInstalled(what: string): void {
   if (!systemdAvailable() || !existsSync(UNIT_PATH)) {
-    skip('no systemd unit found — restart the daemon manually to load the new token');
+    skip(`no systemd unit found — restart the daemon manually to pick up ${what}`);
     return;
   }
   const r = spawnSync('sudo', ['systemctl', 'restart', UNIT_NAME], { stdio: 'inherit' });
   if (r.status !== 0) fail(`systemctl restart ${UNIT_NAME} failed`);
-  ok('daemon restarted with the new token');
+  ok(`daemon restarted with ${what}`);
 }
 
 /**
@@ -294,7 +295,7 @@ async function printConnectCode(helmPort: number, token: string): Promise<void> 
     ensureRemoteEnvLine('DISABLE_AUTOUPDATER', '1');
     recordClaudeVersion(version);
     ok('.helm/remote.json records the pinned version; DISABLE_AUTOUPDATER=1 in remote.env');
-    restartServiceIfInstalled();
+    restartServiceIfInstalled(`Claude Code ${version}`);
     if (systemdAvailable() && existsSync(UNIT_PATH)) {
       // The handshake shows the version the *daemon* sees, which is the point:
       // a login shell and the unit's PATH have disagreed before.
@@ -329,7 +330,7 @@ async function printConnectCode(helmPort: number, token: string): Promise<void> 
       ) + '\n',
     );
     ok('new pairing token issued — the old token no longer works');
-    restartServiceIfInstalled();
+    restartServiceIfInstalled('the new token');
     await printConnectCode(helmPort, token);
     rl.close();
     return;
