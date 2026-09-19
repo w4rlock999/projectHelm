@@ -30,7 +30,17 @@ const TAR_TIMEOUT_MS = 10 * 60_000;
  */
 function runTar(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
-    const proc = spawn('tar', args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    const proc = spawn('tar', args, {
+      stdio: ['ignore', 'ignore', 'pipe'],
+      // COPYFILE_DISABLE stops Apple's bsdtar emitting an AppleDouble `._name`
+      // sidecar beside every member whose file carries extended attributes —
+      // which, on macOS, is most of them, the staging directory included. Those
+      // names are not in the bundle's top-level allowlist, so a remote rejects
+      // the archive outright: shipping from any Mac died at the far end with
+      // `unsafe member name: "._."`. Set for every tar call rather than guarded
+      // by platform, because it is inert everywhere else.
+      env: { ...process.env, COPYFILE_DISABLE: '1' },
+    });
     const stderr: string[] = [];
     proc.stderr?.on('data', (chunk: Buffer) => {
       for (const line of chunk.toString().split('\n')) {
