@@ -1,5 +1,5 @@
 import { createWriteStream, mkdirSync } from 'node:fs';
-import { runClaude } from './adapter/claude.ts';
+import { resultText, runClaude } from './adapter/claude.ts';
 import { agentRuntime, loadAgent, updateAgentSessionId } from './agents.ts';
 import { config } from './config.ts';
 import { paths, SHARED_SESSION_KEY } from './paths.ts';
@@ -24,6 +24,17 @@ export interface AgentTurnResult {
 export interface SessionStore {
   get(): string | null;
   set(sid: string): void;
+  /**
+   * Forget the stored id because the transcript no longer exists (Claude Code
+   * prunes after `cleanupPeriodDays`). The next turn starts a fresh
+   * conversation.
+   *
+   * Only the *Claude* session is dropped — the durable data plane under
+   * `paths.agentSessionStoreDir` is keyed by chat id or 'shared' and survives,
+   * so a reset agent still has its notes. That is what makes starting over
+   * tolerable rather than total amnesia.
+   */
+  clear(): void;
 }
 
 /** Agent-backed session: the shared `agents.claudeSessionId`. The default. */
@@ -34,6 +45,10 @@ export function agentStore(agent: Pick<Agent, 'id' | 'claudeSessionId'>): Sessio
     set: (sid) => {
       current = sid;
       updateAgentSessionId(agent.id, sid);
+    },
+    clear: () => {
+      current = null;
+      updateAgentSessionId(agent.id, null);
     },
   };
 }
@@ -186,9 +201,28 @@ export function runAgentTurn(
           logStream.write(JSON.stringify(evt) + '\n');
           opts.onEvent?.(evt);
           if (evt.type === 'result') {
-            text = evt.result ?? '';
+            // Not `evt.result ?? ''`: a turn that failed before it started has
+            // no `result` at all and names the reason only in `errors`, which
+            // is how a dead session used to reach the ledger explaining nothing.
+            text = resultText(evt);
             isError = evt.is_error;
           }
+        },
+        onSessionInvalid: ({ staleSessionId, result }) => {
+          // Wrapped rather than written as a bare `result` line so no future
+          // reader mistakes a suppressed failure for the turn's real outcome.
+          logStream.write(
+            JSON.stringify({ type: 'helm_session_reset', staleSessionId, suppressed: result }) +
+              '\n',
+          );
+          // Before the retry, deliberately: if the second attempt is aborted or
+          // fails too, the agent is still un-bricked for the next turn. The
+          // retry is the nicety; this line is the fix.
+          session.clear();
+          sessionId = null;
+          console.warn(
+            `[helm] agent ${agentId}: session ${staleSessionId} no longer exists — starting fresh`,
+          );
         },
         onLog: () => {
           /* stdout already captured via onEvent; stderr is debug-only */

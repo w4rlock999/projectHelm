@@ -130,15 +130,17 @@ export function setChatStatus(id: string, status: 'active' | 'blocked'): Gateway
 /** Per-chat session, persisted on the gatewaysChat row. */
 export function chatStore(chat: Pick<GatewayChat, 'id' | 'claudeSessionId'>): SessionStore {
   let current = chat.claudeSessionId;
+  const write = (sid: string | null) => {
+    current = sid;
+    db.update(gatewaysChat).set({ claudeSessionId: sid }).where(eq(gatewaysChat.id, chat.id)).run();
+  };
   return {
     get: () => current,
-    set: (sid) => {
-      current = sid;
-      db.update(gatewaysChat)
-        .set({ claudeSessionId: sid })
-        .where(eq(gatewaysChat.id, chat.id))
-        .run();
-    },
+    set: write,
+    // Per-chat sessions need their own clear: `resetAgentSession` only touches
+    // the agents row, so without this a sessionScope='chat' conversation whose
+    // transcript was pruned would stay bricked forever.
+    clear: () => write(null),
   };
 }
 

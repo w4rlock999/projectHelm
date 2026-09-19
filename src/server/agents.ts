@@ -70,7 +70,8 @@ export function updateAgentSystemPrompt(id: string, systemPrompt: string): void 
   syncAgentTools(id);
 }
 
-export function updateAgentSessionId(id: string, sessionId: string): void {
+/** `null` forgets the session — see SessionStore.clear in run.ts. */
+export function updateAgentSessionId(id: string, sessionId: string | null): void {
   db.update(agents).set({ claudeSessionId: sessionId }).where(eq(agents.id, id)).run();
 }
 

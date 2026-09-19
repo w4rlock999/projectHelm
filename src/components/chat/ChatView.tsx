@@ -3,7 +3,7 @@ import { Button } from '#/components/ui/button';
 import { Textarea } from '#/components/ui/textarea';
 import { cn } from '#/lib/utils';
 import { postSSE } from '#/lib/sse';
-import type { ClaudeEvent } from '#/server/adapter/types';
+import type { ClaudeEvent, ClaudeResultEvent } from '#/server/adapter/types';
 import type { Agent } from '#/lib/trpc';
 import { MessageBubble, type AssistantSegment, type ChatMessage } from './MessageBubble';
 
@@ -60,6 +60,16 @@ export function ChatView({
     const controller = new AbortController();
     abortRef.current = controller;
     let sessionWasNull = !agent.claudeSessionId;
+    // A turn can die without ever emitting a result (the CLI crashing, say), in
+    // which case `end` and its exit code are the only evidence there is.
+    let sawResult = false;
+
+    const patchAssistant = (fields: Partial<AssistantMessage>) =>
+      setMessages((m) =>
+        m.map((mm) =>
+          mm.id === assistantMsg.id && mm.role === 'assistant' ? { ...mm, ...fields } : mm,
+        ),
+      );
 
     try {
       await postSSE({
@@ -70,6 +80,15 @@ export function ChatView({
           if (name !== 'claude') {
             if (name === 'error') {
               setError(safeParse(raw)?.message ?? raw);
+            } else if (name === 'end' && !sawResult) {
+              const code = safeParse(raw)?.code;
+              patchAssistant({
+                complete: true,
+                error:
+                  typeof code === 'number' && code !== 0
+                    ? `The turn ended without a result (claude exited ${code}).`
+                    : 'The turn ended without a result.',
+              });
             }
             return;
           }
@@ -79,19 +98,37 @@ export function ChatView({
           } catch {
             return;
           }
+          if (evt.type === 'helm_notice') {
+            setMessages((m) =>
+              m.map((mm) =>
+                mm.id === assistantMsg.id && mm.role === 'assistant'
+                  ? { ...mm, notices: [...(mm.notices ?? []), evt.text] }
+                  : mm,
+              ),
+            );
+            // A recovered turn re-runs the whole prompt, so drop whatever the
+            // doomed attempt left behind and let the retry stream in cleanly.
+            if (evt.notice === 'session_reset') {
+              patchAssistant({ segments: [] });
+              onSessionAppeared?.();
+            }
+            return;
+          }
           handleClaudeEvent(evt, assistantMsg.id, setMessages);
           if (sessionWasNull && evt.type === 'system' && evt.subtype === 'init') {
             sessionWasNull = false;
             onSessionAppeared?.();
           }
           if (evt.type === 'result') {
-            setMessages((m) =>
-              m.map((mm) =>
-                mm.id === assistantMsg.id && mm.role === 'assistant'
-                  ? { ...mm, complete: true, cost: evt.total_cost_usd, durationMs: evt.duration_ms }
-                  : mm,
-              ),
-            );
+            sawResult = true;
+            patchAssistant({
+              complete: true,
+              cost: evt.total_cost_usd,
+              durationMs: evt.duration_ms,
+              // Previously unread, which is the whole reason a failed turn
+              // rendered as a permanent "thinking…" bubble.
+              ...(evt.is_error ? { error: failureText(evt) } : {}),
+            });
           }
         },
       });
@@ -190,7 +227,19 @@ export function ChatView({
   );
 }
 
-function safeParse(s: string): { message?: string } | null {
+type AssistantMessage = Extract<ChatMessage, { role: 'assistant' }>;
+
+/**
+ * What to show for a failed turn. A failure often has no `result` and states
+ * the reason only in `errors` — mirrors `resultText` in the claude adapter,
+ * duplicated rather than imported because that module pulls in node builtins.
+ */
+function failureText(evt: ClaudeResultEvent): string {
+  const detail = evt.result?.trim() || (evt.errors ?? []).filter(Boolean).join('\n');
+  return detail || `The turn failed (${evt.subtype}).`;
+}
+
+function safeParse(s: string): { message?: string; code?: number } | null {
   try {
     return JSON.parse(s);
   } catch {

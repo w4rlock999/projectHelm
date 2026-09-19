@@ -27,6 +27,15 @@ export type ChatMessage =
       complete: boolean;
       cost?: number;
       durationMs?: number;
+      /**
+       * Out-of-band notes about the turn itself (e.g. the session expired and
+       * it started over). Kept off `segments` deliberately: segments are
+       * addressed by content-block index, and a recovered turn restarts its
+       * blocks at 0, which would overwrite a notice parked there.
+       */
+      notices?: string[];
+      /** Set when the turn failed. Without it a failure renders as a spinner. */
+      error?: string;
     };
 
 export function MessageBubble({
@@ -55,6 +64,7 @@ export function MessageBubble({
 
   const visible = message.segments.filter((s): s is AssistantSegment => Boolean(s));
   const hasContent = visible.length > 0;
+  const mutedText = isGlass ? 'text-[var(--warm-ink-faint)]' : 'text-muted-foreground';
   return (
     <div className="flex justify-start">
       <div
@@ -63,15 +73,26 @@ export function MessageBubble({
           isGlass ? 'border border-white/10 bg-white/[0.06] text-[var(--warm-ink)]' : 'bg-muted',
         )}
       >
-        {!hasContent ? (
-          <span
-            className={cn(
-              'inline-block',
-              isGlass ? 'text-[var(--warm-ink-faint)]' : 'text-muted-foreground',
-            )}
+        {(message.notices ?? []).map((notice, i) => (
+          <p
+            key={`notice-${i}`}
+            className={cn('text-xs', isGlass ? 'text-amber-200' : 'text-amber-600')}
           >
-            <span className="inline-block animate-pulse">●</span> thinking…
-          </span>
+            {notice}
+          </p>
+        ))}
+        {!hasContent ? (
+          // A completed turn with nothing to show is not still thinking — it
+          // either failed (the error renders below) or genuinely said nothing.
+          message.complete ? (
+            message.error ? null : (
+              <span className={cn('inline-block', mutedText)}>(no output)</span>
+            )
+          ) : (
+            <span className={cn('inline-block', mutedText)}>
+              <span className="inline-block animate-pulse">●</span> thinking…
+            </span>
+          )
         ) : (
           visible.map((seg, i) => {
             if (seg.type === 'text') {
@@ -100,6 +121,16 @@ export function MessageBubble({
             );
           })
         )}
+        {message.error ? (
+          <p
+            className={cn(
+              'text-sm whitespace-pre-wrap',
+              isGlass ? 'text-red-200' : 'text-destructive',
+            )}
+          >
+            {message.error}
+          </p>
+        ) : null}
         {message.complete && typeof message.cost === 'number' ? (
           <p
             className={cn(
