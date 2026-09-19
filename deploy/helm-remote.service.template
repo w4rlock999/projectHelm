@@ -11,6 +11,16 @@ Wants=network-online.target
 Type=simple
 User={{USER}}
 WorkingDirectory={{APP_DIR}}
+# The daemon spawns `claude` BY NAME — for every agent turn
+# (src/server/adapter/claude.ts) and for the harness probe in the pairing
+# handshake. systemd gives a service its own minimal PATH, which does not
+# include ~/.local/bin where Claude Code's native installer puts the binary, so
+# without this the daemon starts cleanly, advertises `authOk: false`, and fails
+# every run with ENOENT — while `remote:init`'s own smoke test passes, because
+# that runs in a login shell. Rendered by remote:init from the claude actually
+# found at init time; %h is not used because it resolves to the manager's home,
+# not User='s.
+Environment=PATH={{PATH}}
 EnvironmentFile={{APP_DIR}}/.helm/remote.env
 ExecStart={{NODE_BIN}} {{APP_DIR}}/scripts/serve.mjs
 Restart=always
