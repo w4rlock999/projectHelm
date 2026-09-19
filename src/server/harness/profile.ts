@@ -116,9 +116,13 @@ export function harnessFlags(h: HarnessArgv): string[] {
   // are the host's, not the agent's. The project scope is the workspace's
   // `.claude/`, which render.ts wipes before every spawn.
   args.push('--setting-sources', 'project');
-  args.push('--settings', h.settingsFile);
   // Strict: the host's ~/.claude.json MCP servers must not leak in.
+  // `--mcp-config <configs...>` is VARIADIC — it swallows every following
+  // argument that does not start with `--` — so it is never the last flag
+  // here: `--settings` always follows it. (helm passes the prompt on stdin,
+  // never as a positional, for the same reason.)
   args.push('--strict-mcp-config', '--mcp-config', h.mcpConfigFile);
+  args.push('--settings', h.settingsFile);
   for (const dir of h.pluginDirs) args.push('--plugin-dir', dir);
   const p = h.profile;
   if (p.effort !== null) args.push('--effort', p.effort);

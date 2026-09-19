@@ -67,11 +67,11 @@ describe('harnessFlags', () => {
     expect(harnessFlags(argv())).toEqual([
       '--setting-sources',
       'project',
-      '--settings',
-      '/h/settings.json',
       '--strict-mcp-config',
       '--mcp-config',
       '/h/mcp.json',
+      '--settings',
+      '/h/settings.json',
     ]);
   });
 

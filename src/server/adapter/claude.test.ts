@@ -196,11 +196,11 @@ describe('buildClaudeArgs', () => {
     expect(afterModel).toEqual([
       '--setting-sources',
       'project',
-      '--settings',
-      '/h/settings.json',
       '--strict-mcp-config',
       '--mcp-config',
       '/h/mcp.json',
+      '--settings',
+      '/h/settings.json',
       '--effort',
       'low',
       '--max-turns',
