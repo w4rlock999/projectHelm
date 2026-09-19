@@ -86,6 +86,11 @@ async function main() {
         updateAgentSessionId(agent.id, sid);
       }
     },
+    onSessionInvalid: ({ staleSessionId }) => {
+      console.log(`[smoke] session ${staleSessionId} is gone — forgetting it and starting fresh`);
+      updateAgentSessionId(agent.id, null);
+      lastSessionId = null;
+    },
   });
 
   logStream.end();

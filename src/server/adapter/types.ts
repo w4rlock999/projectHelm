@@ -77,19 +77,50 @@ export type ClaudeEvent =
       message: { role: 'user'; content: unknown[] };
       session_id: string;
     }
-  | {
-      type: 'result';
-      subtype: 'success' | 'error';
-      is_error: boolean;
-      result: string;
-      session_id: string;
-      duration_ms: number;
-      duration_api_ms?: number;
-      num_turns: number;
-      total_cost_usd: number;
-      usage: Record<string, unknown>;
-      stop_reason?: string;
-    };
+  | ClaudeResultEvent
+  | HelmNoticeEvent;
+
+/**
+ * The end-of-turn envelope. Split out of the union because the recovery path
+ * passes one around (see `onSessionInvalid`).
+ *
+ * `result` and `usage` are optional because a turn that dies before it starts
+ * omits them entirely — a pruned `--resume` session produces exactly one event,
+ * `error_during_execution` with `num_turns: 0`, and states the reason only in
+ * `errors`. Typing `result` as required is what let that failure read as an
+ * empty string in the run ledger.
+ */
+export interface ClaudeResultEvent {
+  type: 'result';
+  subtype: 'success' | 'error' | 'error_during_execution' | 'error_max_turns';
+  is_error: boolean;
+  result?: string;
+  /** Present on failures; often the only statement of what went wrong. */
+  errors?: string[];
+  result_index?: number;
+  session_id: string;
+  duration_ms: number;
+  duration_api_ms?: number;
+  num_turns: number;
+  total_cost_usd: number;
+  usage?: Record<string, unknown>;
+  stop_reason?: string;
+}
+
+/**
+ * Helm's own event, injected into the stream rather than emitted by the CLI.
+ *
+ * It rides the same channel as every other event so it needs no plumbing of its
+ * own: `run.ts` writes it to the run's ndjson, the SSE route forwards it as
+ * `event: claude`, and the chat UI renders it. Headless callers ignore it.
+ */
+export interface HelmNoticeEvent {
+  type: 'helm_notice';
+  notice: 'session_reset';
+  text: string;
+  /** The session id that turned out to be gone. */
+  session_id?: string;
+}
 
 export interface AdapterContext {
   agent: {
@@ -107,6 +138,18 @@ export interface AdapterContext {
   onEvent: (event: ClaudeEvent) => void;
   onLog: (stream: 'stdout' | 'stderr', chunk: string) => void;
   onSessionId: (sessionId: string) => void;
+  /**
+   * Fired when a `--resume` attempt died solely because the stored session no
+   * longer exists on disk. The failure `result` was withheld from `onEvent` —
+   * forwarding it would mark the chat bubble complete at $0.0000 before the
+   * retry streams in — and is handed over here so the caller can log it and
+   * forget the dead id. A retry without `--resume` follows immediately.
+   *
+   * Required rather than optional on purpose: it is the only thing that clears
+   * the dead id, and an optional callback would let a future caller silently
+   * reintroduce the permanent brick this exists to fix.
+   */
+  onSessionInvalid: (info: { staleSessionId: string; result: ClaudeResultEvent }) => void;
 }
 
 export interface AgentAdapter {
