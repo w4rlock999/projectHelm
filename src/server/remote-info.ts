@@ -1,10 +1,10 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/index.ts';
 import { agents } from '../db/schema.ts';
-import { BUNDLE_FORMAT_VERSION, HELM_VERSION } from '../version.ts';
+import { BUNDLE_FORMAT_VERSION, HELM_BUILD, HELM_VERSION } from '../version.ts';
 import { config } from './config.ts';
 import { readRemoteJson } from './remote-auth.ts';
 import { isPaused } from './runtime/pause.ts';
@@ -13,10 +13,27 @@ import { isPaused } from './runtime/pause.ts';
 // helm validates responses against this same schema (the version/shape
 // assertion at the seam — skew fails loudly, not mysteriously).
 
+/**
+ * Runtimes an MCP server or a library tool may need on this machine. Version
+ * strings where cheap, booleans for the launchers. Advertised so ship
+ * preflight can refuse an agent whose tools need something the remote lacks,
+ * instead of that agent failing at 3am.
+ */
+export const RuntimesSchema = z.object({
+  node: z.string().nullable(),
+  python3: z.string().nullable(),
+  npx: z.boolean(),
+  uvx: z.boolean(),
+});
+export type Runtimes = z.infer<typeof RuntimesSchema>;
+
 export const HarnessInfoSchema = z.object({
   type: z.string(),
   version: z.string().nullable(),
   authOk: z.boolean(),
+  // ── Added in harness H0 ─────────────────────────────────────────────────
+  // Optional (see the rule on RemoteInfoSchema below).
+  runtimes: RuntimesSchema.optional(),
 });
 export type HarnessInfo = z.infer<typeof HarnessInfoSchema>;
 
@@ -36,40 +53,93 @@ export const RemoteInfoSchema = z.object({
   bundleFormats: z.array(z.number()).optional(),
   paused: z.boolean().optional(),
   deployedAgentCount: z.number().optional(),
+  // ── Added in harness H0 (same optionality rule) ───────────────────────────
+  /** Git short sha of the running build; two 0.1.0 daemons can differ. */
+  helmBuild: z.string().optional(),
+  /** Index of the newest applied drizzle migration; skew here 500s the handshake. */
+  schemaVersion: z.number().int().optional(),
 });
 export type RemoteInfo = z.infer<typeof RemoteInfoSchema>;
 
 const execFileAsync = promisify(execFile);
 
-// Memoized per process: `claude --version` is stable for the daemon's
-// lifetime, and the handshake must stay cheap (no child process per ping).
-let claudeInfo: Promise<HarnessInfo> | undefined;
+// Memoized with a TTL: `claude --version` is stable for minutes at a time, and
+// the handshake must stay cheap (no child process per ping) — but not for the
+// daemon's whole lifetime, because `remote:init --claude <v>` and the local
+// auto-updater both change the binary underneath a running process, and the
+// version is now something ship preflight *refuses* on.
+const PROBE_TTL_MS = 60_000;
 
-function claudeHarnessInfo(): Promise<HarnessInfo> {
-  claudeInfo ??= (async () => {
-    try {
-      const { stdout } = await execFileAsync('claude', ['--version'], { timeout: 15_000 });
-      const version = /\d+[^\s]*/.exec(stdout.trim())?.[0] ?? null;
-      // Headless: authed iff the OAuth token env is present and remote:init's
-      // `claude -p ping` smoke test passed. Local: the CLI resolving at all
-      // implies a usable keychain login.
-      const authOk = config.headless
-        ? Boolean(process.env.CLAUDE_CODE_OAUTH_TOKEN) && readRemoteJson()?.smokeOk === true
-        : true;
-      return { type: 'claude-code', version, authOk };
-    } catch {
-      return { type: 'claude-code', version: null, authOk: false };
-    }
-  })();
-  return claudeInfo;
+let claudeInfo: { at: number; value: Promise<HarnessInfo> } | undefined;
+
+/** The claude-code harness on *this* machine — local console or headless daemon alike. */
+export function localHarnessInfo(): Promise<HarnessInfo> {
+  const now = Date.now();
+  if (!claudeInfo || now - claudeInfo.at > PROBE_TTL_MS) {
+    claudeInfo = { at: now, value: probeClaude() };
+  }
+  return claudeInfo.value;
+}
+
+async function probeClaude(): Promise<HarnessInfo> {
+  const runtimes = await detectRuntimes();
+  try {
+    const { stdout } = await execFileAsync('claude', ['--version'], { timeout: 15_000 });
+    const version = /\d+[^\s]*/.exec(stdout.trim())?.[0] ?? null;
+    // Headless: authed iff the OAuth token env is present and remote:init's
+    // `claude -p ping` smoke test passed. Local: the CLI resolving at all
+    // implies a usable keychain login.
+    const authOk = config.headless
+      ? Boolean(process.env.CLAUDE_CODE_OAUTH_TOKEN) && readRemoteJson()?.smokeOk === true
+      : true;
+    return { type: 'claude-code', version, authOk, runtimes };
+  } catch {
+    return { type: 'claude-code', version: null, authOk: false, runtimes };
+  }
+}
+
+async function versionOf(bin: string, args: string[]): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync(bin, args, { timeout: 5_000 });
+    return (/\d+[^\s]*/.exec(stdout.trim())?.[0] ?? stdout.trim()) || null;
+  } catch {
+    return null;
+  }
+}
+
+async function onPath(bin: string): Promise<boolean> {
+  try {
+    await execFileAsync(process.platform === 'win32' ? 'where' : 'which', [bin], {
+      timeout: 5_000,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function detectRuntimes(): Promise<Runtimes> {
+  const [node, python3, npx, uvx] = await Promise.all([
+    versionOf('node', ['--version']),
+    versionOf('python3', ['--version']),
+    onPath('npx'),
+    onPath('uvx'),
+  ]);
+  return { node, python3, npx, uvx };
+}
+
+/** Test seam: forget the probe so the next call re-runs it. */
+export function clearHarnessProbe(): void {
+  claudeInfo = undefined;
 }
 
 export async function getRemoteInfo(): Promise<RemoteInfo> {
   const all = db.select().from(agents).where(eq(agents.isOperator, false)).all();
   return {
     helmVersion: HELM_VERSION,
+    helmBuild: HELM_BUILD,
     headless: config.headless,
-    harnesses: [await claudeHarnessInfo()],
+    harnesses: [await localHarnessInfo()],
     agentCount: all.length,
     uptimeSec: Math.floor(process.uptime()),
     // The bundle formats this daemon can import. Ship preflight checks its own
@@ -77,5 +147,21 @@ export async function getRemoteInfo(): Promise<RemoteInfo> {
     bundleFormats: [BUNDLE_FORMAT_VERSION],
     paused: isPaused(),
     deployedAgentCount: all.filter((a) => a.deployedTo !== null).length,
+    schemaVersion: appliedSchemaVersion(),
   };
+}
+
+/**
+ * How many migrations drizzle's migrator has applied to this database, read
+ * from its own bookkeeping table (one row per applied migration, so this is
+ * the journal index + 1). Undefined when the table is missing — a database
+ * migrated by hand, e.g. the test fixture.
+ */
+export function appliedSchemaVersion(): number | undefined {
+  try {
+    const row = db.get<{ n: number }>(sql`select count(*) as n from __drizzle_migrations`);
+    return row ? row.n : undefined;
+  } catch {
+    return undefined;
+  }
 }

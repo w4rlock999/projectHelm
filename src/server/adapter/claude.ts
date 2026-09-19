@@ -127,6 +127,22 @@ export interface AttemptResult {
    * back here instead.
    */
   sessionInvalid: ClaudeResultEvent | null;
+  /**
+   * The last few KB of stderr. A CLI that dies at argv/config parse (an unknown
+   * `--effort`, a `--settings` file with a JSON error, a bad `--model`) writes
+   * the reason here and exits non-zero without emitting a single stream-json
+   * event — so this is the only explanation such a run will ever have.
+   */
+  stderrTail?: string;
+}
+
+/** Upper bound on the stderr kept per attempt. */
+export const STDERR_TAIL_BYTES = 8 * 1024;
+
+/** Keep the *end* of a stream, bounded. */
+export function appendTail(tail: string, chunk: string, limit = STDERR_TAIL_BYTES): string {
+  const joined = tail + chunk;
+  return joined.length > limit ? joined.slice(joined.length - limit) : joined;
 }
 
 export type ClaudeAttempt = (
@@ -213,8 +229,12 @@ export const spawnClaudeAttempt: ClaudeAttempt = (ctx, { resume }) => {
     }
   });
 
+  let stderrTail = '';
   proc.stderr.setEncoding('utf8');
-  proc.stderr.on('data', (chunk: string) => ctx.onLog('stderr', chunk));
+  proc.stderr.on('data', (chunk: string) => {
+    ctx.onLog('stderr', chunk);
+    stderrTail = appendTail(stderrTail, chunk);
+  });
 
   return new Promise((resolve, reject) => {
     proc.on('error', (err) => {
@@ -223,7 +243,7 @@ export const spawnClaudeAttempt: ClaudeAttempt = (ctx, { resume }) => {
     });
     proc.on('close', (code) => {
       ctx.signal.removeEventListener('abort', onAbort);
-      resolve({ code, sessionInvalid: sink.sessionInvalid });
+      resolve({ code, sessionInvalid: sink.sessionInvalid, stderrTail });
     });
   });
 };
@@ -244,18 +264,20 @@ export const spawnClaudeAttempt: ClaudeAttempt = (ctx, { resume }) => {
 export async function runClaude(
   ctx: AdapterContext,
   opts: RunClaudeOptions = {},
-): Promise<{ code: number | null }> {
+): Promise<{ code: number | null; stderrTail?: string }> {
   const attempt = opts.attempt ?? spawnClaudeAttempt;
   const stale = ctx.agent.claudeSessionId ?? null;
 
   const first = await attempt(ctx, { resume: stale });
-  if (!first.sessionInvalid || stale === null) return { code: first.code };
+  if (!first.sessionInvalid || stale === null) {
+    return { code: first.code, stderrTail: first.stderrTail };
+  }
 
   if (ctx.signal.aborted) {
     // Not recovering, so the withheld failure is all this turn produced —
     // forward it rather than swallowing it entirely.
     ctx.onEvent(first.sessionInvalid);
-    return { code: first.code };
+    return { code: first.code, stderrTail: first.stderrTail };
   }
 
   // Clearing happens in the caller's handler, before the retry: if attempt two
@@ -264,5 +286,5 @@ export async function runClaude(
   ctx.onEvent(sessionResetNotice(stale));
 
   const second = await attempt(ctx, { resume: null });
-  return { code: second.code };
+  return { code: second.code, stderrTail: second.stderrTail };
 }

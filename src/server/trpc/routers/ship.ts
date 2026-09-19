@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { loadAgent } from '../../agents.ts';
 import { getRemote } from '../../remotes/index.ts';
 import { resolveStranded, startRecall, startShip, transferStatus } from '../../remotes/ship.ts';
-import { fetchRemoteAgentStatus } from '../../remotes/transfer.ts';
+import { fetchRemoteAgentStatus, IMPORT_PENDING } from '../../remotes/transfer.ts';
 import { publicProcedure, router } from '../init.ts';
 
 const agentInput = z.object({ agentId: z.string().uuid() });
@@ -57,6 +57,13 @@ export const shipRouter = router({
     if (!remote) return { ok: false as const, error: 'remote not registered', kind: 'missing' };
     try {
       const status = await fetchRemoteAgentStatus(remote, input.agentId);
+      if (status === IMPORT_PENDING) {
+        return {
+          ok: false as const,
+          error: 'the remote is still importing this agent',
+          kind: 'pending',
+        };
+      }
       if (!status) {
         return {
           ok: false as const,

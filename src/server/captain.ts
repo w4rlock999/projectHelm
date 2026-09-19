@@ -153,6 +153,7 @@ export function ensureHelmCaptain(): Agent {
     deployedAt: null,
     deployError: null,
     runBudgetPerHour: null,
+    lastHarness: null,
     createdAt: new Date(),
   };
   db.insert(agents).values(row).run();

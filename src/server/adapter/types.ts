@@ -40,6 +40,16 @@ export type ClaudeEvent =
       model: string;
       tools: string[];
       permissionMode: string;
+      // Present from claude 2.1.x; optional because the harness fingerprint
+      // (src/server/harness/fingerprint.ts) must degrade, not fail, on an
+      // older CLI. `plugins[].path` is a host-local detail and is dropped there.
+      claude_code_version?: string;
+      skills?: string[];
+      plugins?: { name: string; path?: string; source?: string }[];
+      mcp_servers?: { name: string; status: string }[];
+      agents?: string[];
+      slash_commands?: string[];
+      memory_paths?: Record<string, string>;
       [k: string]: unknown;
     }
   | {

@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { loadAgent } from '../../server/agents.ts';
+import { isImportInFlight } from '../../server/bundle/inflight.ts';
 import { budgetUsage, listRuns } from '../../server/runs.ts';
 import { listAgentChats, listGateways } from '../../server/runtime/gateways.ts';
 import { listHeartbeats } from '../../server/runtime/heartbeats.ts';
@@ -22,6 +23,15 @@ export const Route = createFileRoute('/api/remote/agents/$id/status')({
         const denied = requirePairing(request);
         if (denied) return denied;
         ensureRuntimeStarted();
+
+        // An import in progress is neither present nor absent: the row may
+        // exist, but the smoke turn has not yet decided whether it stays. A
+        // shipper probing after a lost response must wait on this, because
+        // concluding "the remote has it" here and then watching this daemon
+        // self-roll-back leaves a deployed-but-dead agent.
+        if (isImportInFlight(params.id)) {
+          return Response.json({ ok: false, pending: true }, { status: 202 });
+        }
 
         const a = loadAgent(params.id);
         if (!a) return Response.json({ error: 'agent not found' }, { status: 404 });

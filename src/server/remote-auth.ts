@@ -53,6 +53,12 @@ export interface RemoteJson {
   helmVersion: string;
   /** Whether init's `claude -p ping` smoke test passed. */
   smokeOk?: boolean;
+  /**
+   * The Claude Code version present when init (or `--claude <v>`) last ran.
+   * Informational — the handshake probes the live binary; this records what was
+   * pinned, since remote.env also sets DISABLE_AUTOUPDATER=1.
+   */
+  claudeVersion?: string;
 }
 
 export function readRemoteJson(): RemoteJson | null {

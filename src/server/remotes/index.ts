@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { db } from '../../db/index.ts';
 import { agents, remotes, type Remote } from '../../db/schema.ts';
+import { claudeSkew, helmSkew } from '../../lib/harness-version.ts';
 import { HELM_VERSION } from '../../version.ts';
-import type { RemoteInfo } from '../remote-info.ts';
+import { localHarnessInfo, type RemoteInfo } from '../remote-info.ts';
 import { fetchRemoteInfo, RemoteError, setRemotePaused, type RemoteErrorKind } from './client.ts';
 import { decodeConnectCode } from './connect-code.ts';
 import { pendingOrphans, sweepRecallOrphans } from './orphans.ts';
@@ -135,18 +136,27 @@ export async function pingRemote(id: string): Promise<PingResult | null> {
     void sweepRecallOrphans({ remoteId: id }).catch((err) =>
       console.error('[helm] recall-orphan sweep failed:', String(err)),
     );
-    return { ok: true, info, warning: versionWarning(info.helmVersion) };
+    return { ok: true, info, warning: await skewWarning(info) };
   } catch (err) {
     const kind = err instanceof RemoteError ? err.kind : 'ssh';
     return { ok: false, error: err instanceof Error ? err.message : String(err), kind };
   }
 }
 
-/** Warn when local and remote disagree on major.minor — skew breaks the seam. */
-function versionWarning(remoteVersion: string): string | undefined {
-  const majorMinor = (v: string) => v.split('.').slice(0, 2).join('.');
-  if (majorMinor(remoteVersion) === majorMinor(HELM_VERSION)) return undefined;
-  return `remote runs helm ${remoteVersion}, local is ${HELM_VERSION} — update one of them before shipping agents`;
+/**
+ * One sentence per component whose version disagrees with this machine's —
+ * helm itself and the Claude Code CLI. Ship preflight refuses on the same
+ * comparisons (minor and unknown); patch drift is reported here and only
+ * noted there.
+ */
+async function skewWarning(info: RemoteInfo): Promise<string | undefined> {
+  const remoteClaude = info.harnesses.find((h) => h.type === 'claude-code')?.version ?? null;
+  const local = await localHarnessInfo();
+  const messages = [
+    helmSkew(HELM_VERSION, info.helmVersion).message,
+    claudeSkew(local.version, remoteClaude).message,
+  ].filter((m): m is string => m !== null);
+  return messages.length ? messages.join('; ') : undefined;
 }
 
 export type RemotePauseResult =

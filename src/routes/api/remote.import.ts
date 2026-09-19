@@ -7,6 +7,8 @@ import { deleteAgent, loadAgent } from '../../server/agents.ts';
 import { BundleError, CAPS } from '../../server/bundle/format.ts';
 import { hashFile } from '../../server/bundle/fs.ts';
 import { importAgentBundle } from '../../server/bundle/import.ts';
+import { clearImportInFlight, markImportInFlight } from '../../server/bundle/inflight.ts';
+import type { HarnessFingerprint } from '../../server/harness/fingerprint.ts';
 import { paths } from '../../server/paths.ts';
 import { requirePairing } from '../../server/remote-auth.ts';
 import { runAgentTurn } from '../../server/run.ts';
@@ -91,8 +93,15 @@ export const Route = createFileRoute('/api/remote/import')({
             }
           }
 
+          // From here until the smoke turn settles, the agent's status route
+          // answers 202: the row may exist, but whether it stays is undecided,
+          // and a shipper probing after a lost response must not conclude.
+          const claimedAgentId = request.headers.get('x-helm-agent-id');
+          if (claimedAgentId) markImportInFlight(claimedAgentId);
+
           const result = await importAgentBundle(incoming);
           importedAgentId = result.agentId;
+          markImportInFlight(result.agentId);
 
           // Heartbeats need no activation (the tick re-reads every row), but
           // gateways do — reconcileGateways is only called from mutation sites.
@@ -101,9 +110,15 @@ export const Route = createFileRoute('/api/remote/import')({
           // Smoke turn through the real run path, so it proves the harness, the
           // OAuth token, the workspace and the run gate in one shot.
           let smoke: { ok: boolean; runId?: string; text?: string; error?: string };
+          let harnessFingerprint: HarnessFingerprint | undefined;
           try {
             const turn = await runAgentTurn(result.agentId, 'ping', { source: 'smoke' });
-            smoke = { ok: !turn.isError, runId: turn.runId, text: turn.text.slice(0, 500) };
+            harnessFingerprint = turn.harness ?? undefined;
+            // A non-zero exit with no result event (a CLI that died parsing its
+            // flags) carries isError from run.ts already; the exit code is
+            // checked here too so this gate cannot regress to `isError` alone.
+            const ok = !turn.isError && (turn.code === 0 || turn.code === null);
+            smoke = { ok, runId: turn.runId, text: turn.text.slice(0, 500) };
           } catch (err) {
             smoke = { ok: false, error: err instanceof Error ? err.message : String(err) };
           }
@@ -119,6 +134,7 @@ export const Route = createFileRoute('/api/remote/import')({
             toolsReused: result.toolsReused,
             warnings: result.warnings,
             smoke,
+            harnessFingerprint,
           });
         } catch (err) {
           // Self-rollback: leave nothing half-live behind, so `ok: false` is a
@@ -138,6 +154,9 @@ export const Route = createFileRoute('/api/remote/import')({
             error: err instanceof Error ? err.message : String(err),
           });
         } finally {
+          const claimedAgentId = request.headers.get('x-helm-agent-id');
+          if (claimedAgentId) clearImportInFlight(claimedAgentId);
+          if (importedAgentId) clearImportInFlight(importedAgentId);
           rmSync(incoming, { force: true });
         }
       },
