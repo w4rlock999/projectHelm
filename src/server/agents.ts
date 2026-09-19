@@ -6,6 +6,7 @@ import { agents } from '../db/schema.ts';
 import { paths, SHARED_SESSION_KEY } from './paths.ts';
 import { syncAgentTools } from './tools.ts';
 import { DEFAULT_ALLOWED_TOOLS } from './adapter/claude.ts';
+import type { HarnessFingerprint } from './harness/fingerprint.ts';
 import type { Agent } from '../db/schema.ts';
 
 export interface CreateAgentInput {
@@ -47,6 +48,8 @@ export function createAgent(input: CreateAgentInput): Agent {
     deployedAt: null,
     deployError: null,
     runBudgetPerHour: null,
+    // Filled by the first turn's `system/init` (run.ts).
+    lastHarness: null,
     createdAt: new Date(),
   };
   db.insert(agents).values(row).run();
@@ -73,6 +76,14 @@ export function updateAgentSystemPrompt(id: string, systemPrompt: string): void 
 /** `null` forgets the session — see SessionStore.clear in run.ts. */
 export function updateAgentSessionId(id: string, sessionId: string | null): void {
   db.update(agents).set({ claudeSessionId: sessionId }).where(eq(agents.id, id)).run();
+}
+
+/**
+ * Record what the harness actually loaded on the agent's latest turn. Written
+ * from inside the per-agent run chain (run.ts), so it never races a ship.
+ */
+export function updateAgentLastHarness(id: string, lastHarness: HarnessFingerprint): void {
+  db.update(agents).set({ lastHarness }).where(eq(agents.id, id)).run();
 }
 
 /** 'chat' = isolated per Telegram chat; 'agent' = one shared session for everything. */

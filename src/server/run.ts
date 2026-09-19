@@ -1,7 +1,8 @@
 import { createWriteStream, mkdirSync } from 'node:fs';
-import { resultText, runClaude } from './adapter/claude.ts';
-import { agentRuntime, loadAgent, updateAgentSessionId } from './agents.ts';
+import { buildClaudeArgs, resultText, runClaude } from './adapter/claude.ts';
+import { agentRuntime, loadAgent, updateAgentLastHarness, updateAgentSessionId } from './agents.ts';
 import { config } from './config.ts';
+import { fingerprintFromInit, type HarnessFingerprint } from './harness/fingerprint.ts';
 import { paths, SHARED_SESSION_KEY } from './paths.ts';
 import { getInternalToken } from './remote-auth.ts';
 import { markRunErrored, markRunFinished, markRunStarted, reserveRun } from './runs.ts';
@@ -14,6 +15,12 @@ export interface AgentTurnResult {
   sessionId: string | null;
   code: number | null;
   isError: boolean;
+  /**
+   * What the CLI loaded for this turn (from `system/init`), or null when it
+   * died before saying. The remote's import smoke turn returns this to the
+   * shipping side so the two harnesses can be compared.
+   */
+  harness: HarnessFingerprint | null;
 }
 
 /**
@@ -145,14 +152,28 @@ export function runAgentTurn(
     }
     markRunStarted(runId);
 
+    const session = opts.session ?? agentStore(agent);
+    const runtime = agentRuntime(agent);
+
     mkdirSync(paths.agentLogsDir(agent.id), { recursive: true });
     const logStream = createWriteStream(paths.agentLogFile(agent.id, runId), { flags: 'a' });
-    logStream.write(JSON.stringify({ type: 'helm_meta', source, prompt, runId }) + '\n');
+    // The argv is logged so a run can be reproduced by hand and so a harness
+    // flag change is visible next to the fingerprint it produced.
+    logStream.write(
+      JSON.stringify({
+        type: 'helm_meta',
+        source,
+        prompt,
+        runId,
+        argv: buildClaudeArgs(runtime, session.get()),
+      }) + '\n',
+    );
 
-    const session = opts.session ?? agentStore(agent);
     let text = '';
     let sessionId: string | null = session.get();
     let isError = false;
+    let harness: HarnessFingerprint | null = null;
+    let sawResult = false;
     const signal = opts.signal ?? new AbortController().signal;
 
     // Durable data plane, exposed to the turn's tools as env paths (cwd stays the
@@ -173,10 +194,10 @@ export function runAgentTurn(
     const sessionsRootDir = agent.sessionRecall === 'all' ? paths.agentSessionsDir(agentId) : null;
 
     try {
-      const { code } = await runClaude({
+      const { code, stderrTail } = await runClaude({
         // Resume the store's session (per-chat or agent), not whatever the
         // agent row happens to hold.
-        agent: { ...agentRuntime(agent), claudeSessionId: session.get() },
+        agent: { ...runtime, claudeSessionId: session.get() },
         prompt,
         signal,
         env: {
@@ -200,7 +221,15 @@ export function runAgentTurn(
         onEvent: (evt: ClaudeEvent) => {
           logStream.write(JSON.stringify(evt) + '\n');
           opts.onEvent?.(evt);
+          if (evt.type === 'system' && evt.subtype === 'init') {
+            // The CLI states what it loaded before the first API call. Persist
+            // it on the agent here — inside the chain, after the run gate — so
+            // "last harness" can never be written by a turn a ship raced.
+            harness = fingerprintFromInit(evt as Record<string, unknown>);
+            updateAgentLastHarness(agentId, harness);
+          }
           if (evt.type === 'result') {
+            sawResult = true;
             // Not `evt.result ?? ''`: a turn that failed before it started has
             // no `result` at all and names the reason only in `errors`, which
             // is how a dead session used to reach the ledger explaining nothing.
@@ -234,10 +263,20 @@ export function runAgentTurn(
           }
         },
       });
-      markRunFinished(runId, { code, isError, text });
-      return { runId, text, sessionId, code, isError };
+      if (!sawResult && code !== 0) {
+        // The CLI died without ever emitting a `result` — a bad flag, a
+        // malformed settings file, a missing binary on PATH. `isError` is only
+        // ever set from a result event, so without this the ledger would record
+        // such a run as `ok` and the remote's import smoke turn would pass on
+        // an agent that can never run.
+        isError = true;
+        const why = stderrTail?.trim();
+        text = `claude exited with code ${code} before producing a result${why ? `: ${why}` : ''}`;
+      }
+      markRunFinished(runId, { code, isError, text, harness });
+      return { runId, text, sessionId, code, isError, harness };
     } catch (err) {
-      markRunErrored(runId, err instanceof Error ? err.message : String(err));
+      markRunErrored(runId, err instanceof Error ? err.message : String(err), harness);
       throw err;
     } finally {
       logStream.end();

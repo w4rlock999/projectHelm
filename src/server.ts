@@ -1,5 +1,6 @@
 import { createStartHandler, defaultStreamHandler } from '@tanstack/react-start/server';
 import type { ServerEntry } from '@tanstack/react-start/server-entry';
+import { migrateAtBoot } from './db/migrate.ts';
 import { config } from './server/config.ts';
 import { verifyBearer } from './server/remote-auth.ts';
 import { ensureRuntimeStarted } from './server/runtime/index.ts';
@@ -18,7 +19,13 @@ import { ensureRuntimeStarted } from './server/runtime/index.ts';
 //   Local mode is untouched. SPA assets are served before this handler (Vite
 //   middleware in dev, srvx serveStatic in production), so the console stays
 //   reachable through the SSH tunnel; only data endpoints are gated.
-if (config.headless) ensureRuntimeStarted();
+// - **Schema migration** (headless only) before the runtime touches a row: a
+//   VPS is upgraded by pull + build + restart, and a daemon whose code expects
+//   a column its database lacks would 500 the pairing handshake itself.
+if (config.headless) {
+  migrateAtBoot();
+  ensureRuntimeStarted();
+}
 
 const startFetch = createStartHandler(defaultStreamHandler);
 

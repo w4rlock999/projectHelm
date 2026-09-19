@@ -2,15 +2,27 @@ import { createFileRoute, Link } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
 import { AddRemoteDialog } from '#/components/remotes/AddRemoteDialog';
 import { Button } from '#/components/ui/button';
+import { claudeSkew, type SkewLevel } from '#/lib/harness-version';
 import { trpc, type Remote, type RemotePing } from '#/lib/trpc';
 
 export const Route = createFileRoute('/remotes')({ component: RemotesPage });
 
 type PingState = RemotePing | 'pending';
 
+/** What this machine runs — the local half of every version comparison below. */
+interface LocalSide {
+  helmVersion: string;
+  build: string;
+  claudeVersion: string | null;
+}
+
 function RemotesPage() {
   const utils = trpc.useUtils();
   const { data: remotes, isLoading } = trpc.remotes.list.useQuery();
+  const { data: system } = trpc.system.status.useQuery();
+  const local: LocalSide | null = system
+    ? { helmVersion: system.version, build: system.build, claudeVersion: system.harness.version }
+    : null;
   const [adding, setAdding] = useState(false);
   const [pings, setPings] = useState<Record<string, PingState>>({});
 
@@ -77,6 +89,7 @@ function RemotesPage() {
             <RemoteRow
               key={r.id}
               remote={r}
+              local={local}
               ping={pings[r.id]}
               onPing={() => ping(r.id)}
               onRemove={() => {
@@ -105,8 +118,29 @@ function RemotesPage() {
   );
 }
 
+/** Badge colour for a version comparison: amber = warning, red = ship will refuse. */
+const SKEW_CLASS: Record<SkewLevel, string> = {
+  same: '',
+  patch: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
+  minor: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300',
+  unknown: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300',
+};
+
+function SkewBadge({ level, title }: { level: SkewLevel; title: string }) {
+  if (level === 'same') return null;
+  return (
+    <span
+      title={title}
+      className={`ml-1 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase ${SKEW_CLASS[level]}`}
+    >
+      {level === 'patch' ? 'patch drift' : level === 'minor' ? 'version mismatch' : 'unknown'}
+    </span>
+  );
+}
+
 function RemoteRow({
   remote,
+  local,
   ping,
   onPing,
   onRemove,
@@ -115,6 +149,7 @@ function RemoteRow({
   pausing,
 }: {
   remote: Remote;
+  local: LocalSide | null;
   ping: PingState | undefined;
   onPing: () => void;
   onRemove: () => void;
@@ -133,6 +168,13 @@ function RemoteRow({
   const version = info?.helmVersion ?? remote.lastVersion;
   const harnesses = info?.harnesses ?? remote.capabilities ?? [];
   const lastSeen = remote.lastSeenAt ? new Date(String(remote.lastSeenAt)) : null;
+  // Same version, different code: HELM_VERSION rarely moves between deploys,
+  // so the build sha is what actually tells the two daemons apart.
+  const buildDiffers =
+    info?.helmBuild !== undefined &&
+    local !== null &&
+    info.helmVersion === local.helmVersion &&
+    info.helmBuild !== local.build;
 
   return (
     <li className="rounded-md border px-4 py-3">
@@ -145,13 +187,30 @@ function RemoteRow({
           </p>
           <p className="text-muted-foreground mt-0.5 text-sm">
             {version ? `helm ${version}` : 'never reached'}
-            {harnesses.map((h) => (
-              <span key={h.type}>
-                {' · '}
-                {h.type} {h.version ?? '?'}
-                {h.authOk ? '' : ' (auth ✗)'}
+            {info?.helmBuild ? (
+              <span
+                className="font-mono text-xs"
+                title={buildDiffers ? `local build is ${local?.build}` : undefined}
+              >
+                {' '}
+                ({info.helmBuild}
+                {buildDiffers ? ' ≠ local' : ''})
               </span>
-            ))}
+            ) : null}
+            {harnesses.map((h) => {
+              const skew =
+                h.type === 'claude-code' && local
+                  ? claudeSkew(local.claudeVersion, h.version)
+                  : null;
+              return (
+                <span key={h.type}>
+                  {' · '}
+                  {h.type} {h.version ?? '?'}
+                  {h.authOk ? '' : ' (auth ✗)'}
+                  {skew && <SkewBadge level={skew.level} title={skew.message ?? ''} />}
+                </span>
+              );
+            })}
             {info ? ` · ${info.agentCount} agent${info.agentCount === 1 ? '' : 's'}` : ''}
             {info?.deployedAgentCount ? ` (${info.deployedAgentCount} deployed)` : ''}
             {!info && lastSeen ? ` · last seen ${lastSeen.toLocaleString()}` : ''}

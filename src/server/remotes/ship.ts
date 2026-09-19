@@ -3,10 +3,13 @@ import { rmSync } from 'node:fs';
 import { and, eq, isNull, isNotNull } from 'drizzle-orm';
 import { db } from '../../db/index.ts';
 import { agents, type Agent } from '../../db/schema.ts';
+import { claudeSkew, helmSkew } from '../../lib/harness-version.ts';
 import { HELM_VERSION, BUNDLE_FORMAT_VERSION } from '../../version.ts';
 import { loadAgent } from '../agents.ts';
 import { exportAgentBundle } from '../bundle/export.ts';
 import { importAgentBundle } from '../bundle/import.ts';
+import type { HarnessFingerprint } from '../harness/fingerprint.ts';
+import { localHarnessInfo } from '../remote-info.ts';
 import { drainAgentRuns } from '../run.ts';
 import { drainAgentPollers, reconcileGateways } from '../runtime/gateways.ts';
 import { fetchRemoteInfo, RemoteError, type RemoteErrorKind } from './client.ts';
@@ -16,6 +19,7 @@ import {
   deleteRemoteAgent,
   downloadBundle,
   fetchRemoteAgentStatus,
+  IMPORT_PENDING,
   uploadBundle,
 } from './transfer.ts';
 
@@ -47,7 +51,14 @@ export interface TransferProgress {
 }
 
 export type ShipOutcome =
-  | { ok: true; agentId: string; remoteId: string; smoke?: { ok: boolean; text?: string } }
+  | {
+      ok: true;
+      agentId: string;
+      remoteId: string;
+      smoke?: { ok: boolean; text?: string };
+      /** What the remote's CLI loaded on the smoke turn — the far side of the harness comparison. */
+      harnessFingerprint?: HarnessFingerprint;
+    }
   | {
       ok: false;
       phase: ShipPhase;
@@ -187,13 +198,10 @@ async function runShip(run: TransferRun, opts: { withData?: boolean }): Promise<
     //    ships both pass.
     step(run, 'preflight', 'checking the remote');
     const info = await fetchRemoteInfo(remote);
-    if (majorMinor(info.helmVersion) !== majorMinor(HELM_VERSION)) {
+    const helm = helmSkew(HELM_VERSION, info.helmVersion);
+    if (helm.level === 'minor' || helm.level === 'unknown') {
       // A warning is right for ping; for a bundle crossing the seam it is not.
-      throw new ShipRefusal(
-        'preflight',
-        `remote runs helm ${info.helmVersion}, local is ${HELM_VERSION} — upgrade one before shipping`,
-        'preflight',
-      );
+      throw new ShipRefusal('preflight', helm.message!, 'preflight');
     }
     if (!info.bundleFormats?.includes(BUNDLE_FORMAT_VERSION)) {
       throw new ShipRefusal(
@@ -204,13 +212,22 @@ async function runShip(run: TransferRun, opts: { withData?: boolean }): Promise<
         'preflight',
       );
     }
-    if (!info.harnesses.some((h) => h.type === 'claude-code' && h.authOk)) {
+    const remoteClaude = info.harnesses.find((h) => h.type === 'claude-code');
+    if (!remoteClaude?.authOk) {
       throw new ShipRefusal(
         'preflight',
         'remote has no authenticated claude-code harness — check its OAuth token',
         'preflight',
       );
     }
+    // The CLI is the agent's runtime: flags, event shapes and the bundled tool
+    // set change across minors, so the same policy helm applies to itself
+    // applies here. Patch drift is normal (the CLI ships many) and only noted.
+    const claude = claudeSkew((await localHarnessInfo()).version, remoteClaude.version);
+    if (claude.level === 'minor' || claude.level === 'unknown') {
+      throw new ShipRefusal('preflight', claude.message!, 'preflight');
+    }
+    if (claude.level === 'patch') step(run, 'preflight', claude.message!);
     if (info.paused) {
       // Shipping into a paused daemon lands an agent that cannot run.
       throw new ShipRefusal(
@@ -295,8 +312,23 @@ async function runShip(run: TransferRun, opts: { withData?: boolean }): Promise<
     //    them inert, and keeping them is what makes recovery non-lossy.
     step(run, 'commit', 'marking deployed');
     setDeploy(agentId, { deployState: 'deployed', deployedAt: new Date(), deployError: null });
+    if (response.harnessFingerprint?.claudeVersion) {
+      step(
+        run,
+        'done',
+        `remote harness: claude-code ${response.harnessFingerprint.claudeVersion}, ` +
+          `${response.harnessFingerprint.skills.length} skills, ` +
+          `${response.harnessFingerprint.mcpServers.length} mcp servers`,
+      );
+    }
     step(run, 'done', `now running on ${remote.name}`);
-    return { ok: true, agentId, remoteId, smoke: response.smoke };
+    return {
+      ok: true,
+      agentId,
+      remoteId,
+      smoke: response.smoke,
+      harnessFingerprint: response.harnessFingerprint,
+    };
   } catch (err) {
     const phase = err instanceof ShipRefusal ? err.phase : run.phase;
     const kind =
@@ -429,7 +461,12 @@ async function runRecall(run: TransferRun): Promise<ShipOutcome> {
 
 /**
  * Probe whether a remote ended up with the agent. Returns true/false when it can
- * tell, or null if the remote stayed unreachable for the whole window.
+ * tell, or null if the remote stayed unreachable — or still mid-import — for the
+ * whole window.
+ *
+ * A 202 (import in flight) is deliberately *not* an answer: the row may exist
+ * while the smoke turn is still deciding whether the remote keeps it, and
+ * concluding "present" there is how a deployed-but-dead agent gets made.
  */
 async function probeRemoteFor(
   remote: NonNullable<ReturnType<typeof getRemote>>,
@@ -442,6 +479,10 @@ async function probeRemoteFor(
   while (Date.now() < deadline) {
     try {
       const status = await fetchRemoteAgentStatus(remote, agentId);
+      if (status === IMPORT_PENDING) {
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
       reachedOnce = true;
       return status !== null;
     } catch {
@@ -521,8 +562,4 @@ class ShipRefusal extends Error {
     super(message);
     this.name = 'ShipRefusal';
   }
-}
-
-function majorMinor(v: string): string {
-  return v.split('.').slice(0, 2).join('.');
 }

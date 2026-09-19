@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  appendTail,
   buildClaudeArgs,
   createAttemptSink,
   eventDisposition,
@@ -164,6 +165,40 @@ describe('buildClaudeArgs', () => {
     expect(args[args.indexOf('--model') + 1]).toBe('sonnet');
     expect(args[args.indexOf('--allowedTools') + 1]).toContain('Read');
     expect(buildClaudeArgs({ ...agent, allowedTools: [], model: 'opus' }, null)).toContain('opus');
+  });
+});
+
+describe('appendTail', () => {
+  it('keeps the end of the stream within the limit', () => {
+    expect(appendTail('', 'abc', 8)).toBe('abc');
+    expect(appendTail('abcdef', 'ghij', 8)).toBe('cdefghij');
+    expect(appendTail('', 'x'.repeat(20), 8)).toBe('x'.repeat(8));
+  });
+});
+
+describe('runClaude stderr tail', () => {
+  it('hands back the attempt that actually ran', async () => {
+    // A CLI that dies parsing its flags emits no stream-json at all; this tail
+    // is then the only explanation the run ledger will ever have (run.ts).
+    const { context } = ctx({ agent: { id: 'a', workspaceDir: '/w', claudeSessionId: null } });
+    const fn: ClaudeAttempt = () =>
+      Promise.resolve({ code: 1, sessionInvalid: null, stderrTail: 'error: unknown option' });
+    expect(await runClaude(context, { attempt: fn })).toEqual({
+      code: 1,
+      stderrTail: 'error: unknown option',
+    });
+  });
+
+  it('reports the retry’s tail after a session recovery, not the doomed attempt’s', async () => {
+    const { context } = ctx();
+    const tails = ['first', 'second'];
+    const fn: ClaudeAttempt = (_c, { resume }) =>
+      Promise.resolve({
+        code: resume ? 1 : 0,
+        sessionInvalid: resume ? PRUNED_SESSION_RESULT : null,
+        stderrTail: tails.shift(),
+      });
+    expect(await runClaude(context, { attempt: fn })).toEqual({ code: 0, stderrTail: 'second' });
   });
 });
 

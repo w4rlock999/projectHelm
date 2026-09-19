@@ -1,4 +1,5 @@
 import { sql } from 'drizzle-orm';
+import type { HarnessFingerprint } from '../server/harness/fingerprint.ts';
 import {
   index,
   integer,
@@ -53,6 +54,12 @@ export const agents = sqliteTable('agents', {
   // Rolling-window cap on turns from ALL sources (heartbeat, gateway, console).
   // null = unlimited. Enforced centrally in src/server/runs.ts.
   runBudgetPerHour: integer('run_budget_per_hour'),
+  // ── Harness (harness ownership H0) ────────────────────────────────────────
+  // What Claude Code actually loaded on this agent's most recent turn (from
+  // the `system/init` event): CLI version, resolved model, skills, plugins,
+  // MCP servers with status. Names and statuses only — never config. Shown in
+  // the console and compared across the ship seam. Null until the first turn.
+  lastHarness: text('last_harness', { mode: 'json' }).$type<HarnessFingerprint>(),
   createdAt: integer('created_at', { mode: 'timestamp' })
     .notNull()
     .default(sql`(unixepoch())`),
@@ -264,6 +271,9 @@ export const runs = sqliteTable(
     resultText: text('result_text'),
     exitCode: integer('exit_code'),
     isError: integer('is_error', { mode: 'boolean' }),
+    // The harness fingerprint of this run's `system/init` event; null when the
+    // CLI died before emitting one (a bad flag, a missing binary).
+    harness: text('harness', { mode: 'json' }).$type<HarnessFingerprint>(),
     startedAt: integer('started_at', { mode: 'timestamp' })
       .notNull()
       .default(sql`(unixepoch())`),

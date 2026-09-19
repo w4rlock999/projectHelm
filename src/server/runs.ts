@@ -3,6 +3,7 @@ import { and, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import { db } from '../db/index.ts';
 import { runs, type Run } from '../db/schema.ts';
 import { loadAgent } from './agents.ts';
+import type { HarnessFingerprint } from './harness/fingerprint.ts';
 import { deployRefusal } from './deploy-state.ts';
 import { getPauseState, isPaused } from './runtime/pause.ts';
 
@@ -179,7 +180,7 @@ export function markRunStarted(runId: string): void {
 
 export function markRunFinished(
   runId: string,
-  r: { code: number | null; isError: boolean; text: string },
+  r: { code: number | null; isError: boolean; text: string; harness?: HarnessFingerprint | null },
 ): void {
   db.update(runs)
     .set({
@@ -187,17 +188,26 @@ export function markRunFinished(
       resultText: truncate(r.text),
       exitCode: r.code,
       isError: r.isError,
+      harness: r.harness ?? null,
       endedAt: new Date(),
     })
     .where(eq(runs.id, runId))
     .run();
 }
 
-/** A turn that threw before producing a result (spawn failure, abort, crash). */
-export function markRunErrored(runId: string, message: string): void {
+/**
+ * A turn that threw before producing a result (spawn failure, abort, crash).
+ * The fingerprint is still recorded when the CLI got as far as `system/init`.
+ */
+export function markRunErrored(
+  runId: string,
+  message: string,
+  harness: HarnessFingerprint | null = null,
+): void {
   db.update(runs)
     .set({
       status: 'error',
+      harness,
       resultText: truncate(message),
       isError: true,
       endedAt: new Date(),

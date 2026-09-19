@@ -2,6 +2,7 @@ import { createReadStream, createWriteStream, mkdirSync, statSync } from 'node:f
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { BUNDLE_FORMAT_VERSION, HELM_VERSION } from '../../version.ts';
+import type { HarnessFingerprint } from '../harness/fingerprint.ts';
 import { paths } from '../paths.ts';
 import { remoteFetch, RemoteError } from './client.ts';
 import type { TunnelTarget } from './tunnel.ts';
@@ -23,9 +24,23 @@ export interface ImportResponse {
   toolsReused?: { id: string; name: string }[];
   warnings?: string[];
   smoke?: { ok: boolean; runId?: string; text?: string; error?: string };
+  /**
+   * What the remote's CLI loaded for the smoke turn. This is the far side of
+   * the harness comparison: the local fingerprint says what the agent had
+   * here, this says what it has there.
+   */
+  harnessFingerprint?: HarnessFingerprint;
   error?: string;
   kind?: 'format' | 'version' | 'conflict' | 'io' | 'smoke';
 }
+
+/**
+ * Upper bound on the whole import call. It covers spool + extract + import +
+ * a full smoke turn (model call, MCP server start-up) before the first response
+ * byte, so it is minutes, not seconds. A dead link is still caught fast by
+ * ssh's keepalives (tunnel.ts); this only bounds a *live* but slow import.
+ */
+const IMPORT_STALL_MS = 10 * 60_000;
 
 /** Push a bundle to a remote's import endpoint. */
 export async function uploadBundle(
@@ -50,7 +65,7 @@ export async function uploadBundle(
     duplex: 'half',
     // No hard ceiling: a healthy transfer over a slow link may take many
     // minutes. Stall detection plus ssh's own keepalives bound the failure.
-    stallMs: 120_000,
+    stallMs: IMPORT_STALL_MS,
   });
   if (!res.ok) throw new RemoteError('http', `remote returned HTTP ${res.status} on import`);
   return (await res.json()) as ImportResponse;
@@ -106,16 +121,24 @@ export async function downloadBundle(
   };
 }
 
-/** Fetch a deployed agent's status. `null` means the remote does not have it. */
+/** The remote is still importing this agent; whether it will keep it is undecided. */
+export const IMPORT_PENDING = 'pending' as const;
+
+/**
+ * Fetch a deployed agent's status. `null` means the remote does not have it;
+ * `IMPORT_PENDING` (HTTP 202) means it is mid-import and the answer is not yet
+ * knowable — callers deciding a transfer's outcome must wait, not conclude.
+ */
 export async function fetchRemoteAgentStatus(
   remote: TunnelTarget & { token: string },
   agentId: string,
-): Promise<unknown | null> {
+): Promise<unknown | null | typeof IMPORT_PENDING> {
   const res = await remoteFetch(remote, {
     path: `/api/remote/agents/${agentId}/status`,
     timeoutMs: 20_000,
   });
   if (res.status === 404) return null;
+  if (res.status === 202) return IMPORT_PENDING;
   if (!res.ok) throw new RemoteError('http', `remote returned HTTP ${res.status} on status`);
   return await res.json();
 }

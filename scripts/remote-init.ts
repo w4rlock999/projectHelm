@@ -3,13 +3,22 @@
  * of helmship — docs/helmship-plan.md, M-remote-1).
  *
  *   pnpm remote:init [--port <n>] [--host <public-host>] [--ssh-port <n>]
- *                    [--no-service] [--rotate]
+ *                    [--no-service] [--claude-version <v>]
+ *   pnpm remote:init --rotate
+ *   pnpm remote:init --claude <v>
  *
  * Idempotent: re-running overwrites .helm/remote.env / remote.json and
  * reinstalls the systemd unit. `--rotate` only reissues the pairing token
  * (invalidating the old one) and restarts the service. `--no-service` skips
  * systemd (e.g. macOS testing) — start the daemon manually with
  * `HELM_HEADLESS=1 HELM_PORT=<port> pnpm serve`.
+ *
+ * Claude Code version: the daemon's harness is pinned. remote.env carries
+ * DISABLE_AUTOUPDATER=1 so the CLI never moves underneath a running fleet, and
+ * ship preflight refuses when local and remote differ in major.minor. To move
+ * the pin, `--claude <v>` installs that exact version with the native
+ * installer, records it, and restarts the unit; `--claude-version <v>` does the
+ * same install during a fresh init.
  */
 import { execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -72,10 +81,65 @@ function writeRemoteEnv(port: number, oauthToken: string): void {
     'HELM_HEADLESS=1',
     `HELM_PORT=${port}`,
     `CLAUDE_CODE_OAUTH_TOKEN=${oauthToken}`,
+    // The CLI is the fleet's runtime and ship preflight compares its version
+    // across the seam, so it must not update itself under a running daemon.
+    'DISABLE_AUTOUPDATER=1',
     '',
   ].join('\n');
   writeFileSync(paths.remoteEnv, body);
   chmodSync(paths.remoteEnv, 0o600);
+}
+
+/** Add `KEY=value` to remote.env if absent, keeping every other line as is. */
+function ensureRemoteEnvLine(key: string, value: string): void {
+  const existing = existsSync(paths.remoteEnv) ? readFileSync(paths.remoteEnv, 'utf8') : '';
+  if (new RegExp(`^${key}=`, 'm').test(existing)) return;
+  writeFileSync(paths.remoteEnv, `${existing.replace(/\n*$/, '\n')}${key}=${value}\n`);
+  chmodSync(paths.remoteEnv, 0o600);
+}
+
+// ── Claude Code version ──────────────────────────────────────────────────────
+
+function claudeVersion(): string | null {
+  try {
+    const out = execFileSync('claude', ['--version'], { timeout: 15_000 }).toString().trim();
+    return /\d+[^\s]*/.exec(out)?.[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Install one exact Claude Code version with the native installer, which puts
+ * the binary in ~/.local/bin (already on the unit's PATH via {{PATH}}).
+ * No-op when that version is already what `claude --version` reports.
+ */
+function installClaude(version: string): void {
+  if (!/^\d+\.\d+\.\d+$/.test(version)) fail(`not a Claude Code version: ${version}`);
+  const current = claudeVersion();
+  if (current === version) {
+    skip(`Claude Code ${version} already installed`);
+    return;
+  }
+  console.log(`  … installing Claude Code ${version} (currently ${current ?? 'not found'})`);
+  const r = spawnSync(
+    'bash',
+    ['-c', `curl -fsSL https://claude.ai/install.sh | bash -s ${version}`],
+    { stdio: 'inherit', timeout: 600_000 },
+  );
+  if (r.status !== 0) fail(`Claude Code install failed (exit ${r.status})`);
+  const now = claudeVersion();
+  if (now !== version) fail(`installed, but \`claude --version\` reports ${now ?? 'nothing'}`);
+  ok(`Claude Code ${version} installed`);
+}
+
+function recordClaudeVersion(version: string | null): void {
+  if (!version || !existsSync(paths.remoteJson)) return;
+  const previous = JSON.parse(readFileSync(paths.remoteJson, 'utf8'));
+  writeFileSync(
+    paths.remoteJson,
+    JSON.stringify({ ...previous, claudeVersion: version }, null, 2) + '\n',
+  );
 }
 
 // ── systemd ──────────────────────────────────────────────────────────────────
@@ -220,6 +284,30 @@ async function printConnectCode(helmPort: number, token: string): Promise<void> 
 (async () => {
   mkdirSync(paths.helmRoot, { recursive: true });
 
+  if (opt('claude')) {
+    // Move the pinned harness version. Deliberately separate from --rotate: it
+    // touches the binary and the unit, never the pairing token.
+    const version = opt('claude')!;
+    console.log(`Pinning Claude Code to ${version}\n`);
+    if (!existsSync(paths.remoteJson)) fail('no .helm/remote.json — run `pnpm remote:init` first');
+    installClaude(version);
+    ensureRemoteEnvLine('DISABLE_AUTOUPDATER', '1');
+    recordClaudeVersion(version);
+    ok('.helm/remote.json records the pinned version; DISABLE_AUTOUPDATER=1 in remote.env');
+    restartServiceIfInstalled();
+    if (systemdAvailable() && existsSync(UNIT_PATH)) {
+      // The handshake shows the version the *daemon* sees, which is the point:
+      // a login shell and the unit's PATH have disagreed before.
+      const env = existsSync(paths.remoteEnv) ? parseEnvFile(paths.remoteEnv) : {};
+      console.log(
+        `  – verify from the console (Remotes → Ping); the daemon on port ${env.HELM_PORT ?? 5555} ` +
+          `re-probes \`claude --version\` within a minute`,
+      );
+    }
+    rl.close();
+    return;
+  }
+
   if (flag('rotate')) {
     console.log('Rotating the pairing token\n');
     if (!existsSync(paths.remoteJson)) fail('no .helm/remote.json — run `pnpm remote:init` first');
@@ -254,12 +342,11 @@ async function printConnectCode(helmPort: number, token: string): Promise<void> 
   const nodeMajor = Number(process.versions.node.split('.')[0]);
   if (nodeMajor < 20) fail(`Node >= 20 required (running ${process.versions.node})`);
   ok(`Node ${process.versions.node}`);
-  try {
-    const v = execFileSync('claude', ['--version'], { timeout: 15_000 }).toString().trim();
-    ok(`Claude Code CLI on PATH (${v})`);
-  } catch {
-    fail('`claude` not found on PATH — install Claude Code first');
-  }
+  const pin = opt('claude-version');
+  if (pin) installClaude(pin);
+  const claudeV = claudeVersion();
+  if (!claudeV) fail('`claude` not found on PATH — install Claude Code first');
+  ok(`Claude Code CLI on PATH (${claudeV})`);
   if (!existsSync(path.join(repoRoot, 'dist', 'server', 'server.js'))) {
     const build = await prompt(
       'No production build found (dist/). Run `pnpm build` now? (y/n)',
@@ -313,6 +400,7 @@ async function printConnectCode(helmPort: number, token: string): Promise<void> 
         createdAt: new Date().toISOString(),
         helmVersion: HELM_VERSION,
         smokeOk: true,
+        claudeVersion: claudeV,
       },
       null,
       2,

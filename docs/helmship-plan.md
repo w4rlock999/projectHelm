@@ -340,3 +340,73 @@ Explicitly out of v1, in rough priority order:
   package. Decide when M3 starts.
 - Does the remote keep serving the console SPA (handy through the tunnel) or
   ship a stripped headless build? (Currently: serve it, auth-gated.)
+
+---
+
+## Harness ownership (H0 → H2)
+
+_Drafted 2026-09-19. Status: **H0 implemented**; H1 and H2 are the next build targets._
+
+Helm never owned the Claude Code harness. The adapter spawned `claude -p` with
+`--allowedTools` and `--model` and inherited everything else from the host's
+`~/.claude` — user settings (effort), skills, plugins, `~/.claude.json` MCP
+servers, even the auto-memory directory. Measured for the same agent on the
+laptop and the Hetzner daemon: claude 2.1.277 vs 2.1.270, effort high vs unset,
+26 vs 17 skills, 3 vs 0 plugins, and auto-memory landing in the developer's own
+`~/.claude/projects/…/memory/`. Ship preflight never looked at any of it.
+
+### Decisions
+
+| Decision           | Choice                                                                                                                                                                                                                 |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ownership          | The harness is explicit per-agent data helm renders deterministically on whichever machine runs the agent, travels in the bundle like tools do, and is fingerprinted from `system.init` so skew is visible.            |
+| Isolation (H1)     | No per-agent "inherit host" escape hatch; helmCaptain is isolated too. Spawn with `--setting-sources project`, `--settings`, `--strict-mcp-config --mcp-config`, `--plugin-dir`, and explicit `--effort` etc.          |
+| CLI version policy | **major.minor equality** between local and remote at ship preflight; patch drift is a warning. `DISABLE_AUTOUPDATER=1` on the VPS; `pnpm remote:init --claude <v>` moves the pin.                                      |
+| Library kinds (H2) | MCP servers, skills, plugins — the same insert-or-reuse-or-fail import rule as tools.                                                                                                                                  |
+| Out of scope       | Per-agent `CLAUDE_CONFIG_DIR` (would move memory/sessions into helm-owned space, but a relocated config dir breaks macOS keychain auth; needs a helm-held `setup-token` credential on both sides — a later milestone). |
+
+### H0 — observe (shipped)
+
+- Every turn's `system/init` event becomes a **harness fingerprint**
+  (`src/server/harness/fingerprint.ts`): CLI version, resolved model,
+  permission mode, tools, skills, plugins, MCP servers with status. Names and
+  statuses only, never config. Stored on `runs.harness` and
+  `agents.last_harness`; returned by the remote's import smoke turn as
+  `harnessFingerprint`.
+- A CLI that dies parsing its argv emits no `result` event; the run ledger used
+  to record that as `ok`. Now a non-zero exit with no result is an error and
+  carries the stderr tail, and the import smoke turn checks the exit code too.
+- `/api/remote/info` gains optional `helmBuild` (git short sha — two `0.1.0`
+  daemons were three commits apart while ping stayed green), `schemaVersion`,
+  and `harnesses[].runtimes` (node/python3/npx/uvx) for H2's preflight.
+- Ship preflight refuses when local and remote `claude` differ in major.minor
+  (or a side has no version); ping's warning names both helm and claude skew;
+  the Remotes card shows badges.
+- The import route marks the agent **in flight** until the smoke turn settles
+  and its status route answers 202 meanwhile; the shipper's ambiguous-outcome
+  probe waits on 202 instead of committing `deployed` against an agent the
+  remote is about to roll back.
+- Headless boot runs drizzle's migrator, so `git pull && pnpm build && systemctl
+restart` cannot leave the daemon 500-ing its own handshake on a missing column.
+- `remote:init` writes `DISABLE_AUTOUPDATER=1`, records the CLI version, and
+  gains `--claude-version <v>` (fresh init) and `--claude <v>` (move the pin).
+
+### H1 — own and isolate (next)
+
+Per-agent `agents.harness` profile (effort, permission mode, max turns,
+fallback model) plus fleet defaults in `settings`; rendered to
+`.helm/agents/<id>/harness/{settings.json,mcp.json}` and `workspace/.claude/`
+right before each spawn, inside the per-agent run chain; adapter argv gains the
+isolation flags. The exporter excludes `workspace/.claude/**`, `.mcp.json` and
+`CLAUDE.local.md`, and the importer strips them — an agent-authored
+`.claude/settings.json` must never travel or load. Bundle format bumps to 2 with
+a strict agent schema and the _effective_ profile snapshotted at export.
+
+### H2 — library and travel (after H1)
+
+Library tables `skills`, `plugins`, `mcp_servers` with join tables mirroring
+`agent_tools`; trees on disk under `.helm/library/<kind>/<uuid>/` with a tree
+hash verified before every render and export; bundle format 3 carries
+`library/**`; import generalizes `resolveToolImports`; preflight checks
+runtimes; the post-import fingerprint must show every declared MCP server
+`connected` and every declared skill/plugin present, or the remote self-rolls-back.
