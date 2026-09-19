@@ -94,6 +94,10 @@ export async function downloadBundle(
   const res = await remoteFetch(remote, {
     method: 'POST',
     path: `/api/remote/agents/${agentId}/export${query}`,
+    // What this helm can import. A remote that writes another format refuses
+    // *before* deactivating its agent (see the export route), so the failure
+    // is a sentence here rather than a stranded transfer.
+    headers: { 'x-helm-accept-bundle-formats': String(BUNDLE_FORMAT_VERSION) },
     stallMs: 120_000,
   });
 

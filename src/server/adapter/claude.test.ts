@@ -166,6 +166,53 @@ describe('buildClaudeArgs', () => {
     expect(args[args.indexOf('--allowedTools') + 1]).toContain('Read');
     expect(buildClaudeArgs({ ...agent, allowedTools: [], model: 'opus' }, null)).toContain('opus');
   });
+
+  it('spawns without isolation only when no harness is supplied (unit tests)', () => {
+    expect(buildClaudeArgs(agent, null)).not.toContain('--setting-sources');
+  });
+
+  it('appends the isolation flags and the profile after the model', () => {
+    const args = buildClaudeArgs(
+      {
+        ...agent,
+        model: 'opus',
+        harness: {
+          settingsFile: '/h/settings.json',
+          mcpConfigFile: '/h/mcp.json',
+          pluginDirs: [],
+          profile: {
+            effort: 'low',
+            permissionMode: 'acceptEdits',
+            maxTurns: 8,
+            fallbackModel: 'sonnet',
+          },
+          mcpServerNames: [],
+          hasSkills: false,
+        },
+      },
+      null,
+    );
+    const afterModel = args.slice(args.indexOf('--model') + 2);
+    expect(afterModel).toEqual([
+      '--setting-sources',
+      'project',
+      '--settings',
+      '/h/settings.json',
+      '--strict-mcp-config',
+      '--mcp-config',
+      '/h/mcp.json',
+      '--effort',
+      'low',
+      '--max-turns',
+      '8',
+      '--fallback-model',
+      'sonnet',
+      '--permission-mode',
+      'acceptEdits',
+    ]);
+    // The profile lives in argv only — never a second time as a settings key.
+    expect(args.filter((a) => a === '--effort')).toHaveLength(1);
+  });
 });
 
 describe('appendTail', () => {

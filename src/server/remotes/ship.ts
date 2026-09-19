@@ -390,6 +390,38 @@ async function runRecall(run: TransferRun): Promise<ShipOutcome> {
   }
   let bundlePath: string | null = null;
 
+  // Preflight BEFORE the claim, and before the remote deactivates anything:
+  // can this helm read what that daemon writes? Without this, a format skew
+  // surfaces only after the remote has exported — its agent inert, ours a
+  // bundle we cannot import — as a stranded transfer that needed nothing but
+  // an upgrade.
+  step(run, 'preflight', 'checking the remote');
+  try {
+    const info = await fetchRemoteInfo(remote);
+    if (info.bundleWrites === undefined) {
+      throw new ShipRefusal(
+        'preflight',
+        'remote does not say which bundle format it writes (it predates recall preflight) — upgrade it',
+        'preflight',
+      );
+    }
+    if (info.bundleWrites !== BUNDLE_FORMAT_VERSION) {
+      throw new ShipRefusal(
+        'preflight',
+        `remote writes bundle format v${info.bundleWrites}, this helm reads v${BUNDLE_FORMAT_VERSION} — upgrade one side`,
+        'preflight',
+      );
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const kind =
+      err instanceof ShipRefusal ? err.kind : err instanceof RemoteError ? err.kind : 'bundle';
+    // Nothing was claimed: the agent is exactly as deployed as it was.
+    setDeploy(agentId, { deployError: message });
+    step(run, 'rollback', `not recalling: ${message}`);
+    return { ok: false, phase: 'preflight', error: message, kind, resolution: 'rolled-back' };
+  }
+
   setDeploy(agentId, { deployState: 'recalling', deployError: null });
   step(run, 'claim', `recalling from ${remote.name}`);
 
@@ -501,6 +533,23 @@ async function probeRemoteFor(
  * `ensureRuntimeStarted` un-sets its guard flag if it does.
  */
 export async function recoverInterruptedTransfers(): Promise<void> {
+  // The REMOTE side of an interrupted recall: this daemon claimed 'recalling'
+  // on behalf of a caller (remote.agents.$id.export.ts) and died before the
+  // caller confirmed. Whether the caller now runs the agent is unknowable from
+  // here, and reactivating would risk two pollers on one bot token — so it
+  // stays inert (the safe half) and is named in the log for the operator.
+  const inertHere = db
+    .select()
+    .from(agents)
+    .where(and(eq(agents.deployState, 'recalling'), isNull(agents.deployedTo)))
+    .all();
+  for (const a of inertHere) {
+    console.error(
+      `[helm] ${a.name} (${a.id}) is deactivated by a recall that never finished; ` +
+        `if the caller does not have it, resolve it there (or delete the row here)`,
+    );
+  }
+
   const stuck = db
     .select()
     .from(agents)

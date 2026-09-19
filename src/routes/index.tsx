@@ -4,6 +4,7 @@ import { FleetCard } from '#/components/FleetCard';
 import { CaptainDock } from '#/components/CaptainDock';
 import { CaptainPanel } from '#/components/CaptainPanel';
 import { CreateAgentDialog } from '#/components/CreateAgentDialog';
+import { HarnessDefaultsDialog } from '#/components/HarnessDefaultsDialog';
 import { SettingsDialog } from '#/components/SettingsDialog';
 import { cn } from '#/lib/utils';
 import { glass, glassInteractive, monoMeta } from '#/lib/glass';
@@ -198,6 +199,7 @@ function Topbar({
         >
           Remotes
         </Link>
+        <HarnessDefaultsDialog />
         <SettingsDialog theme={theme} onThemeChange={onThemeChange} />
         <Clock />
       </div>

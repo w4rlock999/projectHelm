@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { BUNDLE_FORMAT_VERSION } from '../../version.ts';
+import { HarnessProfileSchema } from '../harness/profile.ts';
 
 // The agent bundle: the wire and on-disk format for ship & recall.
 //
@@ -120,9 +121,15 @@ export const BundleManifestSchema = z.object({
 });
 export type BundleManifest = z.infer<typeof BundleManifestSchema>;
 
-// ── db.json v1 ──────────────────────────────────────────────────────────────
+// ── db.json v2 ──────────────────────────────────────────────────────────────
 
-export const BundleAgentSchema = z.object({
+/**
+ * Strict since v2: an unknown key on the agent is refused, not stripped. The
+ * harness profile is the first field where silently dropping a key would
+ * change how the agent *runs* on the other side, and a bundle is the one
+ * place a hostile or merely newer writer could put one.
+ */
+export const BundleAgentSchema = z.strictObject({
   id: Id,
   name: z.string().min(1).max(200),
   systemPrompt: z.string(),
@@ -136,6 +143,13 @@ export const BundleAgentSchema = z.object({
   claudeSessionId: z.null(),
   sessionScope: z.enum(['chat', 'agent']),
   sessionRecall: z.enum(['none', 'all']),
+  /**
+   * The EFFECTIVE profile at export (agent ⊕ fleet defaults), never the raw
+   * per-agent one: a shipped agent pins the effort/permission mode it left
+   * with rather than inheriting whatever the remote's fleet default happens to
+   * be. Null only when nothing was set on either side.
+   */
+  harness: HarnessProfileSchema.nullable(),
   createdAt: EpochSeconds,
   // `isOperator` is structurally absent: helmCaptain is a per-install singleton
   // and a second one would corrupt the operator lookup. Import always writes false.
@@ -264,6 +278,25 @@ export function toolContentHash(t: { interpreter: string; source: string }): str
     .update('\n')
     .update(t.source, 'utf8')
     .digest('hex');
+}
+
+// ── workspace files that never travel ───────────────────────────────────────
+
+/**
+ * Top-level workspace entries the CLI reads as configuration from its cwd —
+ * the *project* setting source (`.claude/settings.json`, hooks, `env`,
+ * `apiKeyHelper`), the project MCP file, and the local memory file. The
+ * receiver renders `.claude/` itself (harness/render.ts), so anything here is
+ * agent-authored and must neither leave the source nor load on the target.
+ * Excluded at export, stripped (with a warning) at import: belt and braces,
+ * because only one of the two sides is under this helm's control.
+ */
+export const UNTRAVELLED_WORKSPACE_ENTRIES = ['.claude', '.mcp.json', 'CLAUDE.local.md'] as const;
+
+/** Whether a workspace-relative path is (inside) one of the untravelled entries. */
+export function isUntravelledWorkspacePath(rel: string): boolean {
+  const top = rel.split('/')[0];
+  return (UNTRAVELLED_WORKSPACE_ENTRIES as readonly string[]).includes(top);
 }
 
 // ── archive member safety ───────────────────────────────────────────────────

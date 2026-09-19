@@ -3,6 +3,7 @@ import {
   deleteAgent,
   DeployedAgentError,
   loadAgent,
+  resolvedHarnessProfile,
   updateAgentRunBudget,
   updateAgentSystemPrompt,
 } from '../../server/agents.ts';
@@ -35,6 +36,11 @@ export const Route = createFileRoute('/api/agents/$id/info')({
           runBudgetPerHour: a.runBudgetPerHour,
           deployedTo: a.deployedTo,
           deployState: a.deployState,
+          // The agent's own profile, what it actually runs with (fleet
+          // defaults filled in), and what the CLI reported loading last turn.
+          harness: a.harness,
+          harnessEffective: resolvedHarnessProfile(a),
+          lastHarness: a.lastHarness,
           systemPrompt: a.systemPrompt,
           tools: listAgentTools(a.id).map((t) => ({
             id: t.id,

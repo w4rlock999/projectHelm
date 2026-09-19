@@ -24,6 +24,7 @@ import {
   BundleError,
   BundleManifestSchema,
   toolContentHash,
+  UNTRAVELLED_WORKSPACE_ENTRIES,
   type BundleDb,
   type BundleManifest,
 } from './format.ts';
@@ -139,6 +140,18 @@ export async function inspectBundle(bundlePath: string): Promise<InspectedBundle
     await extractTarball(bundlePath, quarantineDir);
     validateExtractedTree(quarantineDir);
     normalizeModes(quarantineDir);
+    // The CLI's cwd configuration never loads from a bundle: the receiver
+    // renders `.claude/` itself, and an agent-authored `.claude/settings.json`
+    // (hooks, `env.ANTHROPIC_BASE_URL`, `apiKeyHelper`) is exactly what the
+    // isolation flags exist to keep out. Our own exporter already excludes
+    // these; this is for a bundle written by someone else's.
+    for (const entry of UNTRAVELLED_WORKSPACE_ENTRIES) {
+      const target = path.join(quarantineDir, 'workspace', entry);
+      if (existsSync(target)) {
+        rmSync(target, { recursive: true, force: true });
+        warnings.push(`stripped workspace/${entry} from the bundle (never loaded from a transfer)`);
+      }
+    }
 
     // 4. Envelope first, so a future-format bundle gets a sentence rather than
     //    a wall of validation errors about a payload it never understood.
@@ -282,10 +295,14 @@ export async function importAgentBundle(bundlePath: string): Promise<ImportResul
         sessionScope: data.agent.sessionScope,
         sessionRecall: data.agent.sessionRecall,
         isOperator: false,
+        // The bundle carries the effective profile, so it is stored as the
+        // agent's own: this helm's fleet defaults do not apply to it.
+        harness: data.agent.harness,
       },
       tools: resolvedTools,
       hasGateway: data.gateways.length > 0,
       workspaceDir: path.join(quarantineDir, 'workspace'),
+      harnessDir: path.join(quarantineDir, 'harness'),
     });
 
     // Standard directories the runtime expects, created whether or not the
@@ -322,6 +339,8 @@ export async function importAgentBundle(bundlePath: string): Promise<ImportResul
           deployedAt: null,
           deployError: null,
           runBudgetPerHour: null,
+          lastHarness: null,
+          harness: data.agent.harness,
           createdAt: new Date(data.agent.createdAt * 1000),
         })
         .run();

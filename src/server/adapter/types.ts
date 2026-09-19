@@ -1,3 +1,5 @@
+import type { HarnessArgv } from '../harness/profile.ts';
+
 // Anthropic API stream events emitted by Claude Code when --include-partial-messages is set.
 export type AnthropicStreamEvent =
   | {
@@ -139,6 +141,13 @@ export interface AdapterContext {
     claudeSessionId: string | null;
     allowedTools?: string[] | null;
     model?: string | null;
+    /**
+     * The rendered harness (isolation flags + profile). Optional only so the
+     * adapter's unit tests can build a context without a filesystem;
+     * production (`agentRuntime`) always supplies it, and without it the
+     * spawn inherits the host's ~/.claude — the exact thing H1 removes.
+     */
+    harness?: HarnessArgv;
   };
   prompt: string;
   signal: AbortSignal;

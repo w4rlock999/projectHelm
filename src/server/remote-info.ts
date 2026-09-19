@@ -58,6 +58,14 @@ export const RemoteInfoSchema = z.object({
   helmBuild: z.string().optional(),
   /** Index of the newest applied drizzle migration; skew here 500s the handshake. */
   schemaVersion: z.number().int().optional(),
+  // ── Added in harness H1 (same optionality rule) ───────────────────────────
+  /**
+   * The bundle format this daemon *writes* on export. Recall preflight checks
+   * it against what the local side can read, so a recall is refused with a
+   * sentence instead of the remote deactivating its agent and streaming a
+   * bundle the local then cannot import.
+   */
+  bundleWrites: z.number().int().optional(),
 });
 export type RemoteInfo = z.infer<typeof RemoteInfoSchema>;
 
@@ -145,6 +153,7 @@ export async function getRemoteInfo(): Promise<RemoteInfo> {
     // The bundle formats this daemon can import. Ship preflight checks its own
     // BUNDLE_FORMAT_VERSION against this before spending time building a bundle.
     bundleFormats: [BUNDLE_FORMAT_VERSION],
+    bundleWrites: BUNDLE_FORMAT_VERSION,
     paused: isPaused(),
     deployedAgentCount: all.filter((a) => a.deployedTo !== null).length,
     schemaVersion: appliedSchemaVersion(),

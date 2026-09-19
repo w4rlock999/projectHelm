@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import type { HarnessFingerprint } from '../server/harness/fingerprint.ts';
+import type { HarnessProfile } from '../server/harness/profile.ts';
 import {
   index,
   integer,
@@ -60,6 +61,11 @@ export const agents = sqliteTable('agents', {
   // MCP servers with status. Names and statuses only — never config. Shown in
   // the console and compared across the ship seam. Null until the first turn.
   lastHarness: text('last_harness', { mode: 'json' }).$type<HarnessFingerprint>(),
+  // ── Harness profile (harness ownership H1) ────────────────────────────────
+  // The agent's own effort / permission mode / max turns / fallback model.
+  // Every field nullable; null here (or a null row) inherits the fleet default
+  // in `settings['harness.defaults']`. Rendered to argv by agentRuntime().
+  harness: text('harness', { mode: 'json' }).$type<HarnessProfile>(),
   createdAt: integer('created_at', { mode: 'timestamp' })
     .notNull()
     .default(sql`(unixepoch())`),

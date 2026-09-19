@@ -6,13 +6,14 @@ import { ToolsPanel } from '#/components/agent/ToolsPanel';
 import { GatewaysPanel } from '#/components/agent/GatewaysPanel';
 import { HeartbeatsPanel } from '#/components/agent/HeartbeatsPanel';
 import { RunsPanel } from '#/components/agent/RunsPanel';
+import { HarnessPanel } from '#/components/agent/HarnessPanel';
 import { ShipDialog } from '#/components/agent/ShipDialog';
 import { DeployBanner } from '#/components/agent/DeployBanner';
 import { trpc } from '#/lib/trpc';
 
 export const Route = createFileRoute('/agents/$id')({ component: AgentPage });
 
-const TABS = ['Chat', 'Runs', 'Tools', 'Gateways', 'Heartbeats'] as const;
+const TABS = ['Chat', 'Runs', 'Tools', 'Harness', 'Gateways', 'Heartbeats'] as const;
 type Tab = (typeof TABS)[number];
 
 function AgentPage() {
@@ -153,6 +154,7 @@ function AgentPage() {
         ))}
       {tab === 'Runs' && <RunsPanel agentId={agent.id} />}
       {tab === 'Tools' && <ToolsPanel agentId={agent.id} />}
+      {tab === 'Harness' && <HarnessPanel agentId={agent.id} />}
       {tab === 'Gateways' && <GatewaysPanel agentId={agent.id} />}
       {tab === 'Heartbeats' && <HeartbeatsPanel agentId={agent.id} />}
 

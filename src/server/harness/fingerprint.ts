@@ -96,6 +96,33 @@ export function fingerprintFromInit(
   };
 }
 
+/**
+ * What changed between two consecutive fingerprints of the same agent, as
+ * short phrases ("dropped 9 skills", "plugins 3 → 0"). Logged once when the
+ * isolation flags first take effect, so a hidden dependency on a host skill or
+ * plugin surfaces in the daemon log rather than as a silently worse agent.
+ * Empty when nothing the agent could notice changed.
+ */
+export function fingerprintDelta(prev: HarnessFingerprint, next: HarnessFingerprint): string[] {
+  const out: string[] = [];
+  const count = (label: string, a: number, b: number) => {
+    if (a !== b) out.push(`${label} ${a} → ${b}`);
+  };
+  if (prev.claudeVersion !== next.claudeVersion) {
+    out.push(`claude ${prev.claudeVersion ?? '?'} → ${next.claudeVersion ?? '?'}`);
+  }
+  if (prev.model !== next.model) out.push(`model ${prev.model ?? '?'} → ${next.model ?? '?'}`);
+  if (prev.permissionMode !== next.permissionMode) {
+    out.push(`permission mode ${prev.permissionMode ?? '?'} → ${next.permissionMode ?? '?'}`);
+  }
+  count('skills', prev.skills.length, next.skills.length);
+  count('plugins', prev.plugins.length, next.plugins.length);
+  count('mcp servers', prev.mcpServers.length, next.mcpServers.length);
+  count('tools', prev.tools.length, next.tools.length);
+  count('subagents', prev.agents.length, next.agents.length);
+  return out;
+}
+
 // ── diff ────────────────────────────────────────────────────────────────────
 
 /**

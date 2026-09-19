@@ -3,6 +3,9 @@ import { randomUUID } from 'node:crypto';
 import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '../db/index.ts';
 import { agents, agentTools, gateways, tools } from '../db/schema.ts';
+import { getHarnessDefaults } from './harness/defaults.ts';
+import { resolveHarnessProfile } from './harness/profile.ts';
+import { renderHarnessFiles } from './harness/render.ts';
 import { paths } from './paths.ts';
 import type { Agent, Tool } from '../db/schema.ts';
 // Built-in tool scripts live as real files under builtin-tools/ and are inlined
@@ -146,11 +149,13 @@ export function unassignTool(agentId: string, toolId: string): void {
  * where the schedulers can see an agent whose workspace is half-built.
  */
 export interface MaterializeSpec {
-  agent: Pick<Agent, 'systemPrompt' | 'sessionScope' | 'sessionRecall' | 'isOperator'>;
+  agent: Pick<Agent, 'systemPrompt' | 'sessionScope' | 'sessionRecall' | 'isOperator' | 'harness'>;
   tools: Tool[];
   hasGateway: boolean;
   /** Target workspace. Defaults to the agent's real one. */
   workspaceDir?: string;
+  /** Target helm-owned harness dir. Defaults to the agent's real one. */
+  harnessDir?: string;
 }
 
 /** True if the agent has a Telegram gateway (so it gets a send-telegram tool). */
@@ -200,10 +205,48 @@ function writeExecutable(path: string, contents: string): void {
   chmodSync(path, 0o755);
 }
 
-/** Regenerate workspace/tools + CLAUDE.md for an agent. Call after any change. */
+/**
+ * Render the agent's harness files (harness/render.ts) from its effective
+ * profile: the agent's own `harness` where set, the fleet default otherwise.
+ *
+ * Also called by run.ts at the head of every turn, inside the per-agent chain:
+ * that is the one moment no `claude` is running for this agent, so wiping the
+ * workspace's `.claude/` there cannot race a spawn that is reading it.
+ */
+export function renderAgentHarness(agentId: string, spec?: MaterializeSpec): void {
+  const agent = spec?.agent ?? db.select().from(agents).where(eq(agents.id, agentId)).get();
+  if (!agent) return;
+  renderHarnessFiles({
+    harnessDir: spec?.harnessDir ?? paths.agentHarnessDir(agentId),
+    workspaceDir: spec?.workspaceDir ?? paths.agentWorkspaceDir(agentId),
+    profile: resolveHarnessProfile(agent.harness, getHarnessDefaults()),
+    mcpServers: [],
+    skills: [],
+    plugins: [],
+  });
+}
+
+/**
+ * Regenerate workspace/tools + the harness + CLAUDE.md for an agent. Call after
+ * any change. This is the single re-materialize hook: agents.ts, the tool
+ * library, the importer and the captain all come through here.
+ */
 export function syncAgentTools(agentId: string, spec?: MaterializeSpec): void {
   materializeAgentTools(agentId, spec);
+  renderAgentHarness(agentId, spec);
   renderClaudeMd(agentId, spec);
+}
+
+/**
+ * Re-materialize every agent, operator included. Run at boot (so a helm
+ * upgrade that changes what gets rendered reaches existing agents without a
+ * mutation) and after a fleet-default change (which changes every inheriting
+ * agent's effective profile).
+ */
+export function resyncAllAgents(): number {
+  const all = db.select({ id: agents.id }).from(agents).all();
+  for (const a of all) syncAgentTools(a.id);
+  return all.length;
 }
 
 // ── CLAUDE.md rendering ─────────────────────────────────────────────────────

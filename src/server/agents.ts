@@ -5,7 +5,15 @@ import { db } from '../db/index.ts';
 import { agents } from '../db/schema.ts';
 import { paths, SHARED_SESSION_KEY } from './paths.ts';
 import { syncAgentTools } from './tools.ts';
-import { DEFAULT_ALLOWED_TOOLS } from './adapter/claude.ts';
+import { DEFAULT_ALLOWED_TOOLS, DEFAULT_MODEL } from './adapter/claude.ts';
+import { getHarnessDefaults } from './harness/defaults.ts';
+import {
+  assertProfileRunnable,
+  harnessAllowedTools,
+  resolveHarnessProfile,
+  type HarnessArgv,
+  type HarnessProfile,
+} from './harness/profile.ts';
 import type { HarnessFingerprint } from './harness/fingerprint.ts';
 import type { Agent } from '../db/schema.ts';
 
@@ -14,6 +22,8 @@ export interface CreateAgentInput {
   systemPrompt: string;
   allowedTools?: string[] | null;
   model?: string | null;
+  /** Per-agent harness profile; null/absent inherits the fleet defaults. */
+  harness?: HarnessProfile | null;
 }
 
 export function createAgent(input: CreateAgentInput): Agent {
@@ -27,6 +37,13 @@ export function createAgent(input: CreateAgentInput): Agent {
   // heartbeats). Per-chat session stores are created lazily on first turn.
   mkdirSync(paths.agentStoreArtifactsDir(id), { recursive: true });
   mkdirSync(paths.agentSessionStoreArtifactsDir(id, SHARED_SESSION_KEY), { recursive: true });
+
+  const harness = input.harness ?? null;
+  // Refuse a profile the CLI would die on, before the row exists.
+  assertProfileRunnable(
+    resolveHarnessProfile(harness, getHarnessDefaults()),
+    input.model ?? DEFAULT_MODEL,
+  );
 
   const row = {
     id,
@@ -50,12 +67,40 @@ export function createAgent(input: CreateAgentInput): Agent {
     runBudgetPerHour: null,
     // Filled by the first turn's `system/init` (run.ts).
     lastHarness: null,
+    harness,
     createdAt: new Date(),
   };
   db.insert(agents).values(row).run();
-  // Materializes built-in tools (heartbeat) + writes CLAUDE.md with the tools block.
+  // Materializes built-in tools (heartbeat), renders the harness files and
+  // writes CLAUDE.md with the tools block.
   syncAgentTools(id);
   return row;
+}
+
+/** The model alias the CLI is actually given (`--model`). */
+export function effectiveModel(a: Pick<Agent, 'model'>): string {
+  return a.model ?? DEFAULT_MODEL;
+}
+
+/** The agent's profile with fleet defaults filled in — what the CLI is spawned with. */
+export function resolvedHarnessProfile(a: Pick<Agent, 'harness'>): HarnessProfile {
+  return resolveHarnessProfile(a.harness, getHarnessDefaults());
+}
+
+/**
+ * Set (or with null, clear) the agent's own harness profile, then re-render.
+ * Validated against the *effective* profile so a fleet default cannot be
+ * combined into something the CLI refuses.
+ */
+export function updateAgentHarness(id: string, harness: HarnessProfile | null): void {
+  const agent = loadAgent(id);
+  if (!agent) throw new Error(`agent ${id} not found`);
+  assertProfileRunnable(
+    resolveHarnessProfile(harness, getHarnessDefaults()),
+    effectiveModel(agent),
+  );
+  db.update(agents).set({ harness }).where(eq(agents.id, id)).run();
+  syncAgentTools(id);
 }
 
 /** The user-facing fleet — excludes the operator (helmCaptain). */
@@ -147,6 +192,7 @@ export function agentRuntime(a: Agent): {
   claudeSessionId: string | null;
   allowedTools?: string[] | null;
   model?: string | null;
+  harness: HarnessArgv;
 } {
   // Every agent invokes tools via Bash — regular agents have the built-in
   // heartbeat tool, and helmCaptain now has the helm CLI — so Bash is always
@@ -159,11 +205,25 @@ export function agentRuntime(a: Agent): {
     : [...DEFAULT_ALLOWED_TOOLS];
   if (!base.includes('Bash')) base.push('Bash');
 
+  // The harness is described here from the database and the well-known file
+  // paths; the files themselves are (re)written by renderAgentHarness right
+  // before the spawn (run.ts), so this never reads the filesystem.
+  const harness: HarnessArgv = {
+    settingsFile: paths.agentHarnessSettings(a.id),
+    mcpConfigFile: paths.agentHarnessMcp(a.id),
+    pluginDirs: [],
+    profile: resolvedHarnessProfile(a),
+    mcpServerNames: [],
+    hasSkills: false,
+  };
+  for (const t of harnessAllowedTools(harness)) if (!base.includes(t)) base.push(t);
+
   return {
     id: a.id,
     workspaceDir: paths.agentWorkspaceDir(a.id),
     claudeSessionId: a.claudeSessionId,
     allowedTools: base,
     model: a.model,
+    harness,
   };
 }
