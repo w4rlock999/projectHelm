@@ -345,7 +345,7 @@ Explicitly out of v1, in rough priority order:
 
 ## Harness ownership (H0 → H2)
 
-_Drafted 2026-09-19. Status: **H0 and H1 implemented**; H2 is the next build target._
+_Drafted 2026-09-19. Status: **H0, H1 and H2a (MCP servers) implemented**; H2b (skills, plugins) is the next build target._
 
 Helm never owned the Claude Code harness. The adapter spawned `claude -p` with
 `--allowedTools` and `--model` and inherited everything else from the host's
@@ -438,11 +438,60 @@ restart` cannot leave the daemon 500-ing its own handshake on a missing column.
   fingerprint changes between turns the delta is logged (`skills 26 → 17`), so
   a hidden dependency on a host skill surfaces in the daemon log.
 
-### H2 — library and travel (after H1)
+### H2a — MCP servers (shipped)
 
-Library tables `skills`, `plugins`, `mcp_servers` with join tables mirroring
-`agent_tools`; trees on disk under `.helm/library/<kind>/<uuid>/` with a tree
-hash verified before every render and export; bundle format 3 carries
-`library/**`; import generalizes `resolveToolImports`; preflight checks
-runtimes; the post-import fingerprint must show every declared MCP server
-`connected` and every declared skill/plugin present, or the remote self-rolls-back.
+The first library kind, and the one an agent needs to reach anything beyond
+the built-in tools. The captain's earlier complaint — "I don't have a CLI lever
+to grant specific MCP servers to an agent" — is what this closes.
+
+- **Library.** `mcp_servers` (migration 0013: `name` unique, `config` json,
+  `requires` json) and `agent_mcp_servers`, mirroring `tools`/`agent_tools`.
+  `src/server/library/mcp-schema.ts` is pure: a stdio server is a **runtime**
+  (`node|npx|python3|uvx`) plus args and env, an http server a URL plus
+  headers — the `command` is constrained to the runtime enum exactly as tool
+  shebangs are to `INTERPRETERS`, so a bundle picks a runtime, never a binary.
+  Both branches are strict; a key the CLI would honour but helm does not render
+  (`cwd`) is refused. `requires` always includes the stdio command.
+- **Secrets.** Env and header values are plaintext at rest (the `gateways.token`
+  posture) and are rendered into the 0600 `mcp.json`, but every read surface —
+  tRPC, REST, `helm mcp ls|get`, `agent get`, the UI — goes through
+  `redactMcpServer` and shows `<set>`. A write that sends `<set>` back keeps
+  the stored value, which is how a redacted read can be edited. The content
+  hash covers env/headers: a same-name server with another token is a
+  different server.
+- **Render and spawn.** `renderHarnessFiles` writes assigned servers into
+  `harness/mcp.json` in the CLI's shape (`type: stdio|http`), name-sorted;
+  `agentRuntime` adds `mcp__<name>` per server to `--allowedTools` (a
+  whole-server grant — the CLI exposes each tool as `mcp__<server>__<tool>`);
+  CLAUDE.md gains a `## MCP servers` section. Assign/unassign/edit/delete all
+  re-render through `syncAgentTools`, so the change lands at the next turn.
+- **Surfaces.** Agent page → Harness tab → "MCP servers" (assign toggles with
+  each server's last observed status), `/mcp` library page, `helm mcp
+ls|get|add|set|rm|assign|unassign` (`--stdio <runtime> [--arg …] [--env K=V]`
+  or `--http <url> [--header K=V]`), REST `/api/mcp`, `/api/mcp/$id`,
+  `/api/agents/$id/mcp[/$serverId]`. `helm mcp add` warns when this machine
+  lacks a runtime the server needs.
+- **Bundle format 3.** db.json carries `mcpServers[]` (full config, content
+  hash) and `agentMcpServerIds[]`; `manifest.requires.runtimes` is the union of
+  their `requires`. Import: `resolveMcpImports` is the tool rule
+  (insert-or-reuse-or-fail on name, hash deciding reuse vs `mcp-conflict`);
+  `requires.runtimes ⊆ detectRuntimes()` or `BundleError('requires')`, checked
+  before a row exists. Ship preflight refuses, before deactivation, when the
+  remote lacks a needed runtime or predates advertising them.
+- **The post-import check.** After the smoke turn the import route runs
+  `harnessDiff(expectedHarness, fingerprint)`: every assigned server must be
+  `connected` and the permission mode must match, or the import throws and the
+  existing self-rollback runs — which now also deletes the library rows (tools
+  and MCP servers) the import _created_, so a failed ship leaves no
+  credential-bearing row a later ship would silently reuse by name.
+- **No dual read.** Upgrade both sides; a v2 daemon sees "bundle format 3,
+  this helm speaks 2 — upgrade", and ship/recall preflight already refuse on
+  format skew.
+
+### H2b — skills and plugins (after H2a)
+
+Library tables `skills`, `plugins` with joins; trees on disk under
+`.helm/library/<kind>/<uuid>/` with a tree hash verified before every render
+and export; bundle format 4 carries `library/**`; the post-import fingerprint
+must show every declared skill/plugin present. The MCP slice above is the
+template: the same insert-or-reuse-or-fail import, the same `harnessDiff` gate.

@@ -18,6 +18,7 @@ type Mods = {
   agents: typeof import('../agents.ts');
   run: typeof import('../run.ts');
   runs: typeof import('../runs.ts');
+  mcp: typeof import('../library/mcp.ts');
 };
 let m: Mods;
 
@@ -45,6 +46,7 @@ beforeAll(async () => {
     agents: await import('../agents.ts'),
     run: await import('../run.ts'),
     runs: await import('../runs.ts'),
+    mcp: await import('../library/mcp.ts'),
   };
 });
 
@@ -95,4 +97,41 @@ describe.skipIf(!live)('live harness fingerprint', () => {
     expect(existsSync(meta.argv[meta.argv.indexOf('--settings') + 1])).toBe(true);
     expect(existsSync(meta.argv[meta.argv.indexOf('--mcp-config') + 1])).toBe(true);
   }, 180_000);
+
+  // Proves the whole MCP path end to end: library row -> rendered mcp.json ->
+  // `mcp__everything` on the allow-list -> the CLI connects and exposes the
+  // server's tools. Needs `npx` and network for the package's first download.
+  it('connects an assigned MCP server and exposes its tools to the agent', async () => {
+    const server = m.mcp.createMcpServer({
+      name: 'everything',
+      description: 'the MCP reference test server',
+      config: {
+        transport: 'stdio',
+        command: 'npx',
+        args: ['-y', '@modelcontextprotocol/server-everything'],
+        env: {},
+      },
+      requires: [],
+    });
+    const agent = m.agents.createAgent({
+      name: 'live-mcp',
+      systemPrompt: 'Reply with the single word ok and nothing else.',
+    });
+    m.mcp.assignMcpServer(agent.id, server.id);
+
+    const turn = await m.run.runAgentTurn(agent.id, 'reply ok', { source: 'manual' });
+    expect(turn.isError).toBe(false);
+    expect(turn.harness).not.toBeNull();
+    expect(turn.harness!.mcpServers).toEqual([{ name: 'everything', status: 'connected' }]);
+    expect(turn.harness!.tools.some((t) => t.startsWith('mcp__everything__'))).toBe(true);
+
+    const log = readFileSync(
+      path.join(root, '.helm', 'agents', agent.id, 'logs', `${turn.runId}.ndjson`),
+      'utf8',
+    );
+    const meta = JSON.parse(log.split('\n')[0]);
+    expect(meta.argv[meta.argv.indexOf('--allowedTools') + 1].split(',')).toContain(
+      'mcp__everything',
+    );
+  }, 300_000);
 });

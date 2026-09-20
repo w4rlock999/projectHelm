@@ -5,7 +5,9 @@
 export const HELM_VERSION = '0.1.0';
 // v2 (harness H1): strict agent schema carrying the effective harness profile;
 // the workspace's `.claude/**`, `.mcp.json` and `CLAUDE.local.md` never travel.
-export const BUNDLE_FORMAT_VERSION = 2;
+// v3 (harness H2): db.json carries the agent's MCP servers and their joins;
+// the manifest's `requires.runtimes` names what the receiver must have on PATH.
+export const BUNDLE_FORMAT_VERSION = 3;
 
 // The git short sha the running build was made from, injected by Vite's
 // `define` (see vite.config.ts). Two daemons at the same HELM_VERSION can still

@@ -3,10 +3,20 @@ import { chmodSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { eq, inArray } from 'drizzle-orm';
 import { db } from '../../db/index.ts';
-import { agents, agentTools, gateways, gatewaysChat, heartbeats, tools } from '../../db/schema.ts';
+import {
+  agentMcpServers,
+  agents,
+  agentTools,
+  gateways,
+  gatewaysChat,
+  heartbeats,
+  mcpServers,
+  tools,
+} from '../../db/schema.ts';
 import { BUNDLE_FORMAT_VERSION, HELM_VERSION } from '../../version.ts';
 import { getHarnessDefaults } from '../harness/defaults.ts';
 import { resolveHarnessProfile } from '../harness/profile.ts';
+import { mcpContentHash, type Runtime } from '../library/mcp-schema.ts';
 import { paths } from '../paths.ts';
 import { hashFile, stageTree } from './fs.ts';
 import {
@@ -74,6 +84,17 @@ export function collectAgentBundleRows(agentId: string): BundleDb {
       ? tx.select().from(tools).where(inArray(tools.id, toolIds)).all()
       : [];
 
+    const mcpIds = tx
+      .select({ id: agentMcpServers.mcpServerId })
+      .from(agentMcpServers)
+      .where(eq(agentMcpServers.agentId, agentId))
+      .all()
+      .map((r) => r.id)
+      .sort();
+    const mcpRows = mcpIds.length
+      ? tx.select().from(mcpServers).where(inArray(mcpServers.id, mcpIds)).all()
+      : [];
+
     const gatewayRows = tx.select().from(gateways).where(eq(gateways.agentId, agentId)).all();
     const gatewayIds = gatewayRows.map((g) => g.id);
     const chatRows = gatewayIds.length
@@ -115,6 +136,17 @@ export function collectAgentBundleRows(agentId: string): BundleDb {
         updatedAt: secs(t.updatedAt)!,
       })),
       agentToolIds: toolIds,
+      mcpServers: byId(mcpRows).map((s) => ({
+        id: s.id,
+        name: s.name,
+        description: s.description,
+        config: s.config,
+        requires: s.requires,
+        contentHash: mcpContentHash(s),
+        createdAt: secs(s.createdAt)!,
+        updatedAt: secs(s.updatedAt)!,
+      })),
+      agentMcpServerIds: mcpIds,
       gateways: byId(gatewayRows).map((g) => ({
         id: g.id,
         agentId: g.agentId,
@@ -149,6 +181,13 @@ export function collectAgentBundleRows(agentId: string): BundleDb {
       })),
     };
   });
+}
+
+/** Union of the runtimes the bundled MCP servers need, sorted. */
+export function bundleRuntimes(rows: Pick<BundleDb, 'mcpServers'>): Runtime[] {
+  const set = new Set<Runtime>();
+  for (const s of rows.mcpServers) for (const r of s.requires) set.add(r);
+  return [...set].sort();
 }
 
 /**
@@ -224,6 +263,7 @@ export async function exportAgentBundle(
 
     const contents: BundleContents = {
       tools: rows.tools.length,
+      mcpServers: rows.mcpServers.length,
       gateways: rows.gateways.length,
       chats: rows.chats.length,
       heartbeats: rows.heartbeats.length,
@@ -239,7 +279,7 @@ export async function exportAgentBundle(
       helmVersion: HELM_VERSION,
       exportedAt: new Date().toISOString(),
       agent: { id: rows.agent.id, name: rows.agent.name },
-      requires: { harness: 'claude-code' },
+      requires: { harness: 'claude-code', runtimes: bundleRuntimes(rows) },
       contents,
       integrity: { dbJsonSha256: createHash('sha256').update(dbJson, 'utf8').digest('hex') },
       warnings: staged.warnings.slice(0, 200),

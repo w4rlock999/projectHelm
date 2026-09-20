@@ -3,11 +3,12 @@ import { randomUUID } from 'node:crypto';
 import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '../db/index.ts';
 import { agents, agentTools, gateways, tools } from '../db/schema.ts';
+import { listAgentMcpServers } from './library/mcp.ts';
 import { getHarnessDefaults } from './harness/defaults.ts';
 import { resolveHarnessProfile } from './harness/profile.ts';
 import { renderHarnessFiles } from './harness/render.ts';
 import { paths } from './paths.ts';
-import type { Agent, Tool } from '../db/schema.ts';
+import type { Agent, McpServer, Tool } from '../db/schema.ts';
 // Built-in tool scripts live as real files under builtin-tools/ and are inlined
 // here as text at build time (Vite `?raw`). They are self-contained standalone
 // scripts run by the agent; per-agent values (HELM_AGENT_ID) and the daemon URL
@@ -151,6 +152,8 @@ export function unassignTool(agentId: string, toolId: string): void {
 export interface MaterializeSpec {
   agent: Pick<Agent, 'systemPrompt' | 'sessionScope' | 'sessionRecall' | 'isOperator' | 'harness'>;
   tools: Tool[];
+  /** Assigned library MCP servers; rendered into harness/mcp.json. */
+  mcpServers: McpServer[];
   hasGateway: boolean;
   /** Target workspace. Defaults to the agent's real one. */
   workspaceDir?: string;
@@ -220,7 +223,10 @@ export function renderAgentHarness(agentId: string, spec?: MaterializeSpec): voi
     harnessDir: spec?.harnessDir ?? paths.agentHarnessDir(agentId),
     workspaceDir: spec?.workspaceDir ?? paths.agentWorkspaceDir(agentId),
     profile: resolveHarnessProfile(agent.harness, getHarnessDefaults()),
-    mcpServers: [],
+    mcpServers: (spec?.mcpServers ?? listAgentMcpServers(agentId)).map((s) => ({
+      name: s.name,
+      config: s.config,
+    })),
     skills: [],
     plugins: [],
   });
@@ -257,6 +263,7 @@ export function renderClaudeMd(agentId: string, spec?: MaterializeSpec): void {
   if (!agent) return;
 
   const custom = spec?.tools ?? listAgentTools(agentId);
+  const mcp = spec?.mcpServers ?? listAgentMcpServers(agentId);
   const hasGateway = spec ? spec.hasGateway : agentHasGateway(agentId);
 
   const lines: string[] = [TOOLS_BLOCK_START, '', '## Tools available to you', ''];
@@ -339,6 +346,20 @@ export function renderClaudeMd(agentId: string, spec?: MaterializeSpec): void {
   for (const tool of custom) {
     lines.push(`### ${toolFileName(tool.name)} — ${tool.description}`);
     lines.push('```', `tools/${toolFileName(tool.name)} [args]`, '```', '');
+  }
+
+  if (mcp.length > 0) {
+    lines.push('## MCP servers');
+    lines.push(
+      'These MCP servers are connected to your Claude Code and their tools are',
+      'available to you directly as `mcp__<server>__<tool>` — call them like any',
+      'other tool, not through Bash. Use them whenever the task calls for it.',
+      '',
+    );
+    for (const s of [...mcp].sort((a, b) => a.name.localeCompare(b.name))) {
+      lines.push(`- **${s.name}** — ${s.description}`);
+    }
+    lines.push('');
   }
 
   lines.push('## Your data');

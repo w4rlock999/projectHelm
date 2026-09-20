@@ -19,9 +19,17 @@ import type { TunnelTarget } from './tunnel.ts';
 export interface ImportResponse {
   ok: boolean;
   agentId?: string;
-  imported?: { tools: number; gateways: number; chats: number; heartbeats: number };
+  imported?: {
+    tools: number;
+    mcpServers?: number;
+    gateways: number;
+    chats: number;
+    heartbeats: number;
+  };
   toolsCreated?: { id: string; name: string }[];
   toolsReused?: { id: string; name: string }[];
+  mcpServersCreated?: { id: string; name: string }[];
+  mcpServersReused?: { id: string; name: string }[];
   warnings?: string[];
   smoke?: { ok: boolean; runId?: string; text?: string; error?: string };
   /**
@@ -31,7 +39,7 @@ export interface ImportResponse {
    */
   harnessFingerprint?: HarnessFingerprint;
   error?: string;
-  kind?: 'format' | 'version' | 'conflict' | 'io' | 'smoke';
+  kind?: 'format' | 'version' | 'conflict' | 'requires' | 'io' | 'smoke';
 }
 
 /**

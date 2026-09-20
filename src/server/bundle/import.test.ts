@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BundleError, toolContentHash, type BundleDb } from './format.ts';
-import { resolveToolImports } from './import.ts';
+import { mcpContentHash } from '../library/mcp-schema.ts';
+import { resolveMcpImports, resolveToolImports } from './import.ts';
 
 // Tool resolution is insert-or-reuse-or-FAIL, never an upsert: updating a shared
 // library tool would re-materialize every other local agent that has it
@@ -91,5 +92,67 @@ describe('resolveToolImports', () => {
   it('never returns a bundled tool without a mapping', () => {
     const plan = resolveToolImports([bundled({}), bundled({ id: ID_B, name: 'other' })], []);
     expect(plan.idMap.size).toBe(2);
+  });
+});
+
+// Same rule for MCP servers, with one difference that matters: the content
+// hash covers env/headers, so a same-name server with another token is a
+// conflict, not a reuse — the shipped agent must not run on the wrong credential.
+describe('resolveMcpImports', () => {
+  type Bundled = BundleDb['mcpServers'][number];
+  const config = {
+    transport: 'stdio' as const,
+    command: 'npx' as const,
+    args: ['-y', 'pkg'],
+    env: { TOKEN: 'a' },
+  };
+  function bundledMcp(over: Partial<Bundled> = {}): Bundled {
+    const s = {
+      id: ID_A,
+      name: 'fetch',
+      description: 'fetches',
+      config,
+      requires: ['npx' as const],
+      createdAt: 1,
+      updatedAt: 1,
+      ...over,
+    };
+    return { ...s, contentHash: mcpContentHash(s) };
+  }
+  const localMcp = (over: Partial<{ id: string; name: string; config: typeof config }> = {}) => ({
+    id: ID_B,
+    name: 'fetch',
+    config,
+    requires: ['npx' as const],
+    ...over,
+  });
+
+  it('creates a server that does not exist locally, keeping its id', () => {
+    const plan = resolveMcpImports([bundledMcp()], []);
+    expect(plan.create).toHaveLength(1);
+    expect(plan.idMap.get(ID_A)).toBe(ID_A);
+  });
+
+  it('reuses an identical local server', () => {
+    const plan = resolveMcpImports([bundledMcp()], [localMcp()]);
+    expect(plan.create).toHaveLength(0);
+    expect(plan.reuse).toEqual([{ id: ID_B, name: 'fetch' }]);
+    expect(plan.idMap.get(ID_A)).toBe(ID_B);
+  });
+
+  it('fails on a same-name server whose only difference is a secret', () => {
+    const other = localMcp({ config: { ...config, env: { TOKEN: 'b' } } });
+    expect(codeOf(() => resolveMcpImports([bundledMcp()], [other]))).toBe('mcp-conflict');
+  });
+
+  it('recomputes the hash rather than trusting the declared one', () => {
+    const lying = { ...bundledMcp(), contentHash: 'f'.repeat(64) };
+    expect(codeOf(() => resolveMcpImports([lying], []))).toBe('integrity');
+  });
+
+  it('mints a fresh id when the bundle id is taken by a different server', () => {
+    const plan = resolveMcpImports([bundledMcp()], [localMcp({ id: ID_A, name: 'other' })]);
+    expect(plan.create).toHaveLength(1);
+    expect(plan.idMap.get(ID_A)).not.toBe(ID_A);
   });
 });

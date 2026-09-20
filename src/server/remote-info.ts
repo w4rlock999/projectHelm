@@ -126,7 +126,8 @@ async function onPath(bin: string): Promise<boolean> {
   }
 }
 
-async function detectRuntimes(): Promise<Runtimes> {
+/** What this machine can start an MCP server or a tool with. Cheap: four PATH probes. */
+export async function detectRuntimes(): Promise<Runtimes> {
   const [node, python3, npx, uvx] = await Promise.all([
     versionOf('node', ['--version']),
     versionOf('python3', ['--version']),

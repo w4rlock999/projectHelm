@@ -8,7 +8,10 @@ import { BundleError, CAPS } from '../../server/bundle/format.ts';
 import { hashFile } from '../../server/bundle/fs.ts';
 import { importAgentBundle } from '../../server/bundle/import.ts';
 import { clearImportInFlight, markImportInFlight } from '../../server/bundle/inflight.ts';
-import type { HarnessFingerprint } from '../../server/harness/fingerprint.ts';
+import type { ImportResult } from '../../server/bundle/import.ts';
+import { harnessDiff, type HarnessFingerprint } from '../../server/harness/fingerprint.ts';
+import { deleteMcpServer } from '../../server/library/mcp.ts';
+import { deleteLibraryTool } from '../../server/tools.ts';
 import { paths } from '../../server/paths.ts';
 import { requirePairing } from '../../server/remote-auth.ts';
 import { runAgentTurn } from '../../server/run.ts';
@@ -63,6 +66,7 @@ export const Route = createFileRoute('/api/remote/import')({
         mkdirSync(paths.helmRoot + '/tmp/incoming', { recursive: true, mode: 0o700 });
 
         let importedAgentId: string | null = null;
+        let imported: ImportResult | null = null;
         try {
           // Spool to disk rather than memory; the cap is enforced on the real
           // byte count, not on the declared content-length.
@@ -101,6 +105,7 @@ export const Route = createFileRoute('/api/remote/import')({
 
           const result = await importAgentBundle(incoming);
           importedAgentId = result.agentId;
+          imported = result;
           markImportInFlight(result.agentId);
 
           // Heartbeats need no activation (the tick re-reads every row), but
@@ -125,6 +130,19 @@ export const Route = createFileRoute('/api/remote/import')({
           if (!smoke.ok) {
             throw new Error(`imported agent failed its smoke turn: ${smoke.error ?? smoke.text}`);
           }
+          // The turn ran, but did the harness load what the bundle declared?
+          // A shipped agent silently missing its MCP server is exactly the
+          // drift harness ownership exists to stop, so a miss is a refusal.
+          const problems = harnessFingerprint
+            ? harnessDiff(result.expectedHarness, harnessFingerprint)
+            : result.expectedHarness.mcpServers.length > 0
+              ? ['the smoke turn produced no harness fingerprint']
+              : [];
+          if (problems.length > 0) {
+            throw new Error(
+              `imported agent's harness did not load as declared: ${problems.join('; ')}`,
+            );
+          }
 
           return Response.json({
             ok: true,
@@ -132,6 +150,8 @@ export const Route = createFileRoute('/api/remote/import')({
             imported: result.imported,
             toolsCreated: result.toolsCreated,
             toolsReused: result.toolsReused,
+            mcpServersCreated: result.mcpServersCreated,
+            mcpServersReused: result.mcpServersReused,
             warnings: result.warnings,
             smoke,
             harnessFingerprint,
@@ -145,6 +165,23 @@ export const Route = createFileRoute('/api/remote/import')({
               reconcileGateways();
             } catch (cleanupErr) {
               console.error('[helm] import rollback failed:', String(cleanupErr));
+            }
+          }
+          // Library rows the import *created* go too (reused ones belong to
+          // other agents here). Left behind, a created MCP server is a
+          // credential-bearing row a later ship would silently reuse by name.
+          for (const t of imported?.toolsCreated ?? []) {
+            try {
+              deleteLibraryTool(t.id);
+            } catch (cleanupErr) {
+              console.error('[helm] import rollback: tool', t.name, String(cleanupErr));
+            }
+          }
+          for (const s of imported?.mcpServersCreated ?? []) {
+            try {
+              deleteMcpServer(s.id);
+            } catch (cleanupErr) {
+              console.error('[helm] import rollback: mcp server', s.name, String(cleanupErr));
             }
           }
           const kind = err instanceof BundleError ? bundleKind(err) : 'io';
@@ -165,13 +202,16 @@ export const Route = createFileRoute('/api/remote/import')({
 });
 
 /** Map a BundleError to the coarse kind the shipping side switches on. */
-function bundleKind(err: BundleError): 'format' | 'version' | 'conflict' | 'io' {
+function bundleKind(err: BundleError): 'format' | 'version' | 'conflict' | 'requires' | 'io' {
   switch (err.code) {
     case 'unsupported-version':
       return 'version';
     case 'conflict':
     case 'tool-conflict':
+    case 'mcp-conflict':
       return 'conflict';
+    case 'requires':
+      return 'requires';
     case 'malformed':
     case 'unsafe-path':
     case 'integrity':

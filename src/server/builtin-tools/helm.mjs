@@ -12,19 +12,57 @@ const argv = process.argv.slice(2);
 const cmd = argv[0];
 const sub = argv[1];
 
-function flags(args) {
+// `multi` names flags that may repeat (`--arg a --arg b`); those come back as
+// arrays, always, even when given once or not at all. Everything else is
+// last-wins, as before.
+function flags(args, multi) {
   const out = {};
   const pos = [];
+  const many = new Set(multi || []);
+  for (const k of many) out[k] = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a.indexOf('--') === 0) {
       const k = a.slice(2);
       const v = i + 1 < args.length && args[i + 1].indexOf('--') !== 0 ? args[++i] : 'true';
-      out[k] = v;
+      if (many.has(k)) out[k].push(v);
+      else out[k] = v;
     } else pos.push(a);
   }
   return { out: out, pos: pos };
 }
+
+// `K=V` pairs (from repeated --env / --header) into an object. A bare `K=<set>`
+// keeps the value already stored for that key on `helm mcp set`.
+function kvPairs(list, what) {
+  const out = {};
+  for (const item of list) {
+    const eq = item.indexOf('=');
+    if (eq <= 0) {
+      console.error('--' + what + ' expects KEY=VALUE, got: ' + item);
+      process.exit(1);
+    }
+    out[item.slice(0, eq)] = item.slice(eq + 1);
+  }
+  return out;
+}
+
+// Build an MCP server config from `--stdio <runtime> [--arg …] [--env K=V]` or
+// `--http <url> [--header K=V]`. Returns undefined when neither was given.
+function mcpConfig(f) {
+  if (f.stdio && f.http) {
+    console.error('give either --stdio <runtime> or --http <url>, not both');
+    process.exit(1);
+  }
+  if (f.stdio) {
+    return { transport: 'stdio', command: f.stdio, args: f.arg, env: kvPairs(f.env, 'env') };
+  }
+  if (f.http) {
+    return { transport: 'http', url: f.http, headers: kvPairs(f.header, 'header') };
+  }
+  return undefined;
+}
+const MCP_MULTI = ['arg', 'env', 'header'];
 
 // Resolve --<key> inline, or --<key>-file <path> (preferred for multi-line text).
 function readArg(f, key) {
@@ -93,6 +131,7 @@ function usage() {
       '  helm agent ls\n' +
       '  helm agent get <id>\n' +
       '  helm tool ls\n' +
+      '  helm mcp ls | helm mcp get <id>\n' +
       '  helm remote ls\n' +
       '  helm remote ping <id>\n' +
       '  helm agent runs <id> [--limit <n>]\n' +
@@ -107,6 +146,12 @@ function usage() {
       '  helm tool rm <id>\n' +
       '  helm tool assign <toolId> --agent <agentId>\n' +
       '  helm tool unassign <toolId> --agent <agentId>\n' +
+      '  helm mcp add --name <n> --desc <d> --stdio <node|npx|python3|uvx> [--arg <a>]... [--env K=V]... [--requires <r,...>] [--assign <agentId>]\n' +
+      '  helm mcp add --name <n> --desc <d> --http <url> [--header K=V]... [--assign <agentId>]\n' +
+      '  helm mcp set <id> [--name <n>] [--desc <d>] [--stdio … | --http …] [--requires <r,...>]   # K=<set> keeps a stored secret\n' +
+      '  helm mcp rm <id>\n' +
+      '  helm mcp assign <serverId> --agent <agentId>\n' +
+      '  helm mcp unassign <serverId> --agent <agentId>\n' +
       '  helm remote add --code <helm-connect:...> [--name <n>]\n' +
       '  helm remote add --ssh <user@host[:port]> --token <t> [--port <helmPort>] [--name <n>]\n' +
       '  helm remote rm <id>\n' +
@@ -162,7 +207,11 @@ function profilePatch(f) {
   }
 
   if (cmd === 'context') {
-    out({ agents: await get('/api/agents/list'), library: await get('/api/tools') });
+    out({
+      agents: await get('/api/agents/list'),
+      library: await get('/api/tools'),
+      mcp: await get('/api/mcp'),
+    });
   } else if (cmd === 'agent') {
     if (sub === 'ls') {
       out(await get('/api/agents/list'));
@@ -341,6 +390,79 @@ function profilePatch(f) {
       }
     } else {
       console.error('unknown: helm tool ' + (sub || ''));
+      process.exit(1);
+    }
+  } else if (cmd === 'mcp') {
+    if (sub === 'ls') {
+      out(await get('/api/mcp'));
+    } else if (sub === 'get') {
+      if (!argv[2]) {
+        console.error('usage: helm mcp get <id>');
+        process.exit(1);
+      }
+      out(await get('/api/mcp/' + argv[2]));
+    } else if (sub === 'add') {
+      const f = flags(argv.slice(2), MCP_MULTI).out;
+      const config = mcpConfig(f);
+      if (!f.name || !f.desc || !config) {
+        console.error(
+          'usage: helm mcp add --name <n> --desc <d> --stdio <runtime> [--arg <a>]... [--env K=V]... [--requires <r,...>] [--assign <agentId>]\n' +
+            '       helm mcp add --name <n> --desc <d> --http <url> [--header K=V]... [--assign <agentId>]',
+        );
+        process.exit(1);
+      }
+      const body = { name: f.name, description: f.desc, config: config };
+      if (f.requires) body.requires = f.requires.split(',').filter(Boolean);
+      if (f.assign) body.assignTo = [f.assign];
+      const r = await call('POST', '/api/mcp', body);
+      console.log('added mcp server ' + r.id + (f.assign ? ' (assigned to ' + f.assign + ')' : ''));
+      if (r.runtimesMissing && r.runtimesMissing.length) {
+        console.log(
+          'warning: this machine lacks ' +
+            r.runtimesMissing.join(', ') +
+            ' — the server will show as failed until it is installed',
+        );
+      }
+      out(r);
+    } else if (sub === 'set') {
+      const id = argv[2];
+      const f = flags(argv.slice(3), MCP_MULTI).out;
+      if (!id) {
+        console.error(
+          'usage: helm mcp set <id> [--name <n>] [--desc <d>] [--stdio … | --http …] [--requires <r,...>]',
+        );
+        process.exit(1);
+      }
+      const patch = {};
+      if (f.name) patch.name = f.name;
+      if (f.desc) patch.description = f.desc;
+      const config = mcpConfig(f);
+      if (config) patch.config = config;
+      if (f.requires) patch.requires = f.requires.split(',').filter(Boolean);
+      out(await call('PATCH', '/api/mcp/' + id, patch));
+    } else if (sub === 'rm') {
+      if (!argv[2]) {
+        console.error('usage: helm mcp rm <id>');
+        process.exit(1);
+      }
+      await call('DELETE', '/api/mcp/' + argv[2]);
+      console.log('removed mcp server ' + argv[2]);
+    } else if (sub === 'assign' || sub === 'unassign') {
+      const serverId = argv[2];
+      const f = flags(argv.slice(3)).out;
+      if (!serverId || !f.agent) {
+        console.error('usage: helm mcp ' + sub + ' <serverId> --agent <agentId>');
+        process.exit(1);
+      }
+      if (sub === 'assign') {
+        await call('POST', '/api/agents/' + f.agent + '/mcp', { serverId: serverId });
+        console.log('assigned ' + serverId + ' to ' + f.agent);
+      } else {
+        await call('DELETE', '/api/agents/' + f.agent + '/mcp/' + serverId);
+        console.log('unassigned ' + serverId + ' from ' + f.agent);
+      }
+    } else {
+      console.error('unknown: helm mcp ' + (sub || ''));
       process.exit(1);
     }
   } else if (cmd === 'remote') {

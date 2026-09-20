@@ -8,6 +8,7 @@ import {
   updateAgentSystemPrompt,
 } from '../../server/agents.ts';
 import { listAgentTools } from '../../server/tools.ts';
+import { listAgentMcpServers, redactMcpServer } from '../../server/library/mcp.ts';
 import { listAgentChats, listGateways } from '../../server/runtime/gateways.ts';
 import { listHeartbeats } from '../../server/runtime/heartbeats.ts';
 import type { ApiHandlerCtx, RouteParams } from '../../server/api-route.ts';
@@ -48,6 +49,8 @@ export const Route = createFileRoute('/api/agents/$id/info')({
             interpreter: t.interpreter,
             description: t.description,
           })),
+          // Assigned MCP servers, redacted: env/header values never leave the daemon.
+          mcpServers: listAgentMcpServers(a.id).map(redactMcpServer),
           // Tokens are secret — never expose them over the read API.
           gateways: listGateways(a.id).map((g) => ({
             id: g.id,

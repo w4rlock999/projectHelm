@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button } from '#/components/ui/button';
 import { trpc } from '#/lib/trpc';
 import { EMPTY_DRAFT, HarnessProfileForm, type ProfileDraft } from './HarnessProfileForm';
+import { McpServersPanel } from './McpServersPanel';
 
 // The agent's harness: what helm spawns its Claude Code with (the profile),
 // and what the CLI reported actually loading on the last turn (the
@@ -83,6 +84,8 @@ export function HarnessPanel({ agentId }: { agentId: string }) {
           effective: {describe(data.effective)}
         </span>
       </div>
+
+      <McpServersPanel agentId={agentId} lastObserved={last?.mcpServers} />
 
       <div>
         <h3 className="text-base font-medium">Last observed harness</h3>

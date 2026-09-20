@@ -1,5 +1,6 @@
 import { chmodSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { toClaudeMcpEntry, type McpServerConfig } from '../library/mcp-schema.ts';
 import type { HarnessProfile } from './profile.ts';
 
 // Render an agent's harness to disk: the files `claude` is pointed at by the
@@ -26,12 +27,17 @@ export interface RenderHarnessInput {
   harnessDir: string;
   workspaceDir: string;
   profile: HarnessProfile;
-  /** H2. Empty in H1: mcp.json is `{ "mcpServers": {} }`. */
-  mcpServers: unknown[];
+  /** Assigned library MCP servers, rendered into mcp.json under their names. */
+  mcpServers: RenderMcpServer[];
   /** H2. Empty in H1: `.claude/skills/` is created empty. */
   skills: unknown[];
   /** H2. Empty in H1: `harness/plugins/` is emptied. */
   plugins: unknown[];
+}
+
+export interface RenderMcpServer {
+  name: string;
+  config: McpServerConfig;
 }
 
 export interface RenderedHarness {
@@ -64,6 +70,19 @@ export const ARGV_OWNED_SETTINGS_KEYS = [
   'fallbackModel',
 ] as const;
 
+/**
+ * The mcp.json body: one entry per assigned server, keyed by library name,
+ * in name order so the file is byte-stable for a given assignment set.
+ */
+export function harnessMcpJson(servers: RenderMcpServer[]): {
+  mcpServers: Record<string, unknown>;
+} {
+  const entries = [...servers]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((s) => [s.name, toClaudeMcpEntry(s.config)] as const);
+  return { mcpServers: Object.fromEntries(entries) };
+}
+
 /** The settings.json body. Exported so the test can pin its shape. */
 export function harnessSettingsJson(): Record<string, unknown> {
   return { env: { MCP_TIMEOUT: String(MCP_TIMEOUT_MS) } };
@@ -86,7 +105,7 @@ export function renderHarnessFiles(input: RenderHarnessInput): RenderedHarness {
   rmSync(path.join(workspaceDir, '.mcp.json'), { force: true });
   rmSync(path.join(workspaceDir, 'CLAUDE.local.md'), { force: true });
 
-  // 2. The helm-owned tree. 0700/0600: mcp.json will carry MCP secrets in H2.
+  // 2. The helm-owned tree. 0700/0600: mcp.json carries MCP env/header secrets.
   mkdirSync(harnessDir, { recursive: true, mode: 0o700 });
   chmodSync(harnessDir, 0o700);
 
@@ -94,7 +113,7 @@ export function renderHarnessFiles(input: RenderHarnessInput): RenderedHarness {
   writeSecret(settingsFile, JSON.stringify(harnessSettingsJson(), null, 2) + '\n');
 
   const mcpConfigFile = path.join(harnessDir, 'mcp.json');
-  writeSecret(mcpConfigFile, JSON.stringify({ mcpServers: {} }, null, 2) + '\n');
+  writeSecret(mcpConfigFile, JSON.stringify(harnessMcpJson(input.mcpServers), null, 2) + '\n');
 
   const pluginsDir = path.join(harnessDir, 'plugins');
   mkdirSync(pluginsDir, { recursive: true, mode: 0o700 });
@@ -107,7 +126,7 @@ export function renderHarnessFiles(input: RenderHarnessInput): RenderedHarness {
     mcpConfigFile,
     pluginDirs: [],
     hasSkills: false,
-    mcpServerNames: [],
+    mcpServerNames: Object.keys(harnessMcpJson(input.mcpServers).mcpServers),
   };
 }
 

@@ -5,17 +5,22 @@ import { createHash } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { db } from '../../db/index.ts';
 import {
+  agentMcpServers,
   agents,
   agentTools,
   gateways,
   gatewaysChat,
   heartbeats,
+  mcpServers,
   tools,
+  type McpServer,
   type Tool,
 } from '../../db/schema.ts';
 import { loadAgent } from '../agents.ts';
 import { isValidCron } from '../cron.ts';
+import { mcpContentHash, missingRuntimes, type Runtime } from '../library/mcp-schema.ts';
 import { paths } from '../paths.ts';
+import { detectRuntimes, type Runtimes } from '../remote-info.ts';
 import { syncAgentTools } from '../tools.ts';
 import { normalizeModes, validateExtractedTree } from './fs.ts';
 import {
@@ -111,19 +116,85 @@ export function resolveToolImports(
   return { idMap, create, reuse };
 }
 
+export interface McpPlan {
+  /** bundled server id -> local server id */
+  idMap: Map<string, string>;
+  create: BundleDb['mcpServers'];
+  reuse: { id: string; name: string }[];
+}
+
+/**
+ * The tool rule, for MCP servers: insert-or-reuse-or-fail on name, with the
+ * content hash (config + requires, secrets included) deciding between reuse
+ * and conflict. A same-name server with a different token is a *different*
+ * server, and silently reusing the local one would run the shipped agent
+ * against the wrong credential.
+ */
+export function resolveMcpImports(
+  bundled: BundleDb['mcpServers'],
+  local: Pick<McpServer, 'id' | 'name' | 'config' | 'requires'>[],
+): McpPlan {
+  const idMap = new Map<string, string>();
+  const create: BundleDb['mcpServers'] = [];
+  const reuse: { id: string; name: string }[] = [];
+  const localIds = new Set(local.map((s) => s.id));
+
+  for (const s of bundled) {
+    const computed = mcpContentHash(s);
+    if (computed !== s.contentHash) {
+      throw new BundleError(
+        'integrity',
+        `mcp server "${s.name}" declares a content hash that does not match its config`,
+      );
+    }
+    // The name is unique locally (mcp_servers_name_uq), so at most one match.
+    const match = local.find((l) => l.name === s.name);
+    if (match) {
+      const localHash = mcpContentHash(match);
+      if (localHash !== computed) {
+        throw new BundleError(
+          'mcp-conflict',
+          `mcp server "${s.name}" already exists here with a different config ` +
+            `(local ${localHash.slice(0, 12)}, bundle ${computed.slice(0, 12)}) — ` +
+            `rename one of them and retry`,
+        );
+      }
+      idMap.set(s.id, match.id);
+      reuse.push({ id: match.id, name: s.name });
+      continue;
+    }
+    const newId = localIds.has(s.id) ? randomUUID() : s.id;
+    idMap.set(s.id, newId);
+    create.push({ ...s, id: newId });
+  }
+  return { idMap, create, reuse };
+}
+
 export interface InspectedBundle {
   manifest: BundleManifest;
   data: BundleDb;
   quarantineDir: string;
   plan: ToolPlan;
+  mcpPlan: McpPlan;
   warnings: string[];
+}
+
+export interface InspectOptions {
+  /**
+   * Seam for tests: the runtimes this machine is taken to have. Production
+   * probes PATH (detectRuntimes), and only when the bundle needs something.
+   */
+  runtimes?: Runtimes;
 }
 
 /**
  * Validate a bundle and extract it to quarantine. Writes nothing outside
  * `.helm/tmp`. Cheapest and most disqualifying checks first.
  */
-export async function inspectBundle(bundlePath: string): Promise<InspectedBundle> {
+export async function inspectBundle(
+  bundlePath: string,
+  opts: InspectOptions = {},
+): Promise<InspectedBundle> {
   const warnings: string[] = [];
 
   // 1. Gzip sanity + size + free disk, before spawning tar at all.
@@ -248,9 +319,24 @@ export async function inspectBundle(bundlePath: string): Promise<InspectedBundle
 
     const localTools = db.select().from(tools).all();
     const plan = resolveToolImports(data.tools, localTools);
+    const mcpPlan = resolveMcpImports(data.mcpServers, db.select().from(mcpServers).all());
+
+    // The bundle's MCP servers must be startable here. Checked before a row
+    // exists: a server that cannot start would fail the smoke turn anyway, but
+    // this names the missing runtime instead of a `failed` status.
+    if (manifest.requires.runtimes.length > 0) {
+      const have = opts.runtimes ?? (await detectRuntimes());
+      const missing = missingRuntimes(manifest.requires.runtimes, have);
+      if (missing.length > 0) {
+        throw new BundleError(
+          'requires',
+          `this machine lacks ${missing.join(', ')}, which the bundle's MCP servers need`,
+        );
+      }
+    }
 
     ok = true;
-    return { manifest, data, quarantineDir, plan, warnings };
+    return { manifest, data, quarantineDir, plan, mcpPlan, warnings };
   } finally {
     if (!ok) rmSync(quarantineDir, { recursive: true, force: true });
   }
@@ -259,15 +345,36 @@ export async function inspectBundle(bundlePath: string): Promise<InspectedBundle
 export interface ImportResult {
   agentId: string;
   manifest: BundleManifest;
-  imported: { tools: number; gateways: number; chats: number; heartbeats: number };
+  imported: {
+    tools: number;
+    mcpServers: number;
+    gateways: number;
+    chats: number;
+    heartbeats: number;
+  };
   toolsCreated: { id: string; name: string }[];
   toolsReused: { id: string; name: string }[];
+  mcpServersCreated: { id: string; name: string }[];
+  mcpServersReused: { id: string; name: string }[];
+  /**
+   * What the importer declared for the agent's harness and therefore expects
+   * the smoke turn's fingerprint to show: every assigned MCP server
+   * `connected`, the profile's permission mode. Fed to harnessDiff by the
+   * import route; a miss there is a rolled-back refusal.
+   */
+  expectedHarness: { mcpServers: string[]; permissionMode: string | null };
   warnings: string[];
 }
 
 /** Install a validated bundle. See the ordering note at the top of this file. */
-export async function importAgentBundle(bundlePath: string): Promise<ImportResult> {
-  const { manifest, data, quarantineDir, plan, warnings } = await inspectBundle(bundlePath);
+export async function importAgentBundle(
+  bundlePath: string,
+  opts: InspectOptions = {},
+): Promise<ImportResult> {
+  const { manifest, data, quarantineDir, plan, mcpPlan, warnings } = await inspectBundle(
+    bundlePath,
+    opts,
+  );
   const agentId = data.agent.id;
   const agentDir = paths.agentDir(agentId);
 
@@ -288,6 +395,20 @@ export async function importAgentBundle(bundlePath: string): Promise<ImportResul
       updatedAt: new Date(t.updatedAt * 1000),
     }));
 
+    // Same for MCP servers: one entry per bundled server under its local id.
+    const assignedMcpIds = new Set(data.agentMcpServerIds);
+    const resolvedMcp: McpServer[] = data.mcpServers
+      .filter((s) => assignedMcpIds.has(s.id))
+      .map((s) => ({
+        id: mcpPlan.idMap.get(s.id)!,
+        name: s.name,
+        description: s.description,
+        config: s.config,
+        requires: s.requires as Runtime[],
+        createdAt: new Date(s.createdAt * 1000),
+        updatedAt: new Date(s.updatedAt * 1000),
+      }));
+
     mkdirSync(path.join(quarantineDir, 'workspace'), { recursive: true });
     syncAgentTools(agentId, {
       agent: {
@@ -300,6 +421,7 @@ export async function importAgentBundle(bundlePath: string): Promise<ImportResul
         harness: data.agent.harness,
       },
       tools: resolvedTools,
+      mcpServers: resolvedMcp,
       hasGateway: data.gateways.length > 0,
       workspaceDir: path.join(quarantineDir, 'workspace'),
       harnessDir: path.join(quarantineDir, 'harness'),
@@ -363,6 +485,28 @@ export async function importAgentBundle(bundlePath: string): Promise<ImportResul
           .values({ agentId, toolId: plan.idMap.get(bundledId)!, createdAt: new Date() })
           .run();
       }
+      for (const s of mcpPlan.create) {
+        tx.insert(mcpServers)
+          .values({
+            id: s.id,
+            name: s.name,
+            description: s.description,
+            config: s.config,
+            requires: s.requires,
+            createdAt: new Date(s.createdAt * 1000),
+            updatedAt: new Date(s.updatedAt * 1000),
+          })
+          .run();
+      }
+      for (const bundledId of data.agentMcpServerIds) {
+        tx.insert(agentMcpServers)
+          .values({
+            agentId,
+            mcpServerId: mcpPlan.idMap.get(bundledId)!,
+            createdAt: new Date(),
+          })
+          .run();
+      }
       for (const g of data.gateways) {
         tx.insert(gateways)
           .values({
@@ -414,12 +558,19 @@ export async function importAgentBundle(bundlePath: string): Promise<ImportResul
       manifest,
       imported: {
         tools: plan.create.length,
+        mcpServers: mcpPlan.create.length,
         gateways: data.gateways.length,
         chats: data.chats.length,
         heartbeats: data.heartbeats.length,
       },
       toolsCreated: plan.create.map((t) => ({ id: t.id, name: t.name })),
       toolsReused: plan.reuse,
+      mcpServersCreated: mcpPlan.create.map((s) => ({ id: s.id, name: s.name })),
+      mcpServersReused: mcpPlan.reuse,
+      expectedHarness: {
+        mcpServers: resolvedMcp.map((s) => s.name),
+        permissionMode: data.agent.harness?.permissionMode ?? null,
+      },
       warnings: warnings.concat(manifest.warnings),
     };
   } catch (err) {

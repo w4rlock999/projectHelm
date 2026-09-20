@@ -29,6 +29,7 @@ type Mods = {
   importMod: typeof import('./import.ts');
   defaults: typeof import('../harness/defaults.ts');
   tar: typeof import('./tar.ts');
+  mcp: typeof import('../library/mcp.ts');
 };
 let m: Mods;
 
@@ -63,6 +64,7 @@ beforeAll(async () => {
     importMod: await import('./import.ts'),
     defaults: await import('../harness/defaults.ts'),
     tar: await import('./tar.ts'),
+    mcp: await import('../library/mcp.ts'),
   };
 });
 
@@ -261,5 +263,156 @@ describe('export -> import round-trip', () => {
     const exported = await m.exportMod.exportAgentBundle(agent.id, { withData: false });
     expect(exported.manifest.contents.data).toBe(false);
     expect(exported.manifest.contents.dataFiles).toBe(0);
+  });
+});
+
+// ── MCP servers travel (bundle v3) ──────────────────────────────────────────
+// The runtime seam: every host here "has" npx, so the requires check passes
+// without probing PATH — except in the test that exercises the refusal.
+const HAVE_ALL = { node: '22.0.0', python3: '3.12.0', npx: true, uvx: true };
+
+describe('MCP servers in the bundle', () => {
+  const fetchConfig = {
+    transport: 'stdio' as const,
+    command: 'npx' as const,
+    args: ['-y', '@modelcontextprotocol/server-fetch'],
+    env: { FETCH_TOKEN: 'secret-token-1' },
+  };
+
+  it('carries an assigned server, recreates it on import, and renders it for the agent', async () => {
+    const server = m.mcp.createMcpServer({
+      name: 'fetch-a',
+      description: 'fetches pages',
+      config: fetchConfig,
+      requires: [],
+    });
+    expect(server.requires).toEqual(['npx']);
+    const agent = m.agents.createAgent({ name: 'With MCP', systemPrompt: 'x' });
+    m.mcp.assignMcpServer(agent.id, server.id);
+
+    const p = m.paths.paths;
+    const before = JSON.parse(readFileSync(p.agentHarnessMcp(agent.id), 'utf8'));
+    expect(before.mcpServers['fetch-a'].env.FETCH_TOKEN).toBe('secret-token-1');
+    expect(readFileSync(p.agentClaudeMd(agent.id), 'utf8')).toContain('## MCP servers');
+    expect(m.agents.agentRuntime(m.agents.loadAgent(agent.id)!).allowedTools).toContain(
+      'mcp__fetch-a',
+    );
+
+    const exported = await m.exportMod.exportAgentBundle(agent.id);
+    expect(exported.manifest.contents.mcpServers).toBe(1);
+    expect(exported.manifest.requires.runtimes).toEqual(['npx']);
+
+    // Move to a helm that has neither the agent nor the server.
+    m.agents.deleteAgent(agent.id);
+    m.mcp.deleteMcpServer(server.id);
+    expect(m.mcp.getMcpServerByName('fetch-a')).toBe(null);
+
+    const result = await m.importMod.importAgentBundle(exported.path, { runtimes: HAVE_ALL });
+    expect(result.imported.mcpServers).toBe(1);
+    expect(result.mcpServersCreated).toEqual([{ id: server.id, name: 'fetch-a' }]);
+    expect(result.expectedHarness.mcpServers).toEqual(['fetch-a']);
+
+    const restored = m.mcp.getMcpServerByName('fetch-a')!;
+    expect(restored.id).toBe(server.id); // id preserved: ship -> recall -> ship round-trips
+    expect(restored.config).toEqual(fetchConfig); // the secret travelled with it
+    expect(m.mcp.listAgentMcpServers(agent.id).map((s) => s.name)).toEqual(['fetch-a']);
+    const after = JSON.parse(readFileSync(p.agentHarnessMcp(agent.id), 'utf8'));
+    expect(after).toEqual(before);
+    expect(readFileSync(p.agentClaudeMd(agent.id), 'utf8')).toContain('fetches pages');
+  });
+
+  it('reuses an identical local server by name instead of duplicating it', async () => {
+    const server = m.mcp.createMcpServer({
+      name: 'fetch-b',
+      description: 'd',
+      config: fetchConfig,
+      requires: [],
+    });
+    const agent = m.agents.createAgent({ name: 'Reuse', systemPrompt: 'x' });
+    m.mcp.assignMcpServer(agent.id, server.id);
+    const exported = await m.exportMod.exportAgentBundle(agent.id);
+    m.agents.deleteAgent(agent.id); // the server stays: another agent could hold it
+
+    const result = await m.importMod.importAgentBundle(exported.path, { runtimes: HAVE_ALL });
+    expect(result.mcpServersCreated).toEqual([]);
+    expect(result.mcpServersReused).toEqual([{ id: server.id, name: 'fetch-b' }]);
+    expect(m.mcp.listMcpServers().filter((s) => s.name === 'fetch-b')).toHaveLength(1);
+    expect(m.mcp.listAgentMcpServerIds(agent.id)).toEqual([server.id]);
+  });
+
+  it('refuses a same-name server whose credential differs, leaving nothing behind', async () => {
+    const server = m.mcp.createMcpServer({
+      name: 'fetch-c',
+      description: 'd',
+      config: fetchConfig,
+      requires: [],
+    });
+    const agent = m.agents.createAgent({ name: 'Conflict', systemPrompt: 'x' });
+    m.mcp.assignMcpServer(agent.id, server.id);
+    const exported = await m.exportMod.exportAgentBundle(agent.id);
+    m.agents.deleteAgent(agent.id);
+    // The local library now holds fetch-c with another token.
+    m.mcp.updateMcpServer(server.id, {
+      config: { ...fetchConfig, env: { FETCH_TOKEN: 'a-different-token' } },
+    });
+
+    await expect(
+      m.importMod.importAgentBundle(exported.path, { runtimes: HAVE_ALL }),
+    ).rejects.toThrowError(/different config/);
+    expect(m.agents.loadAgent(agent.id)).toBe(null);
+    expect(existsSync(m.paths.paths.agentDir(agent.id))).toBe(false);
+    expect(m.mcp.getMcpServer(server.id)?.config.transport === 'stdio').toBe(true);
+  });
+
+  it('refuses a bundle whose servers need a runtime this machine lacks, before writing anything', async () => {
+    const server = m.mcp.createMcpServer({
+      name: 'py-d',
+      description: 'd',
+      config: { transport: 'stdio', command: 'uvx', args: ['mcp-server-fetch'], env: {} },
+      requires: [],
+    });
+    const agent = m.agents.createAgent({ name: 'Needs uvx', systemPrompt: 'x' });
+    m.mcp.assignMcpServer(agent.id, server.id);
+    const exported = await m.exportMod.exportAgentBundle(agent.id);
+    expect(exported.manifest.requires.runtimes).toEqual(['uvx']);
+    m.agents.deleteAgent(agent.id);
+    m.mcp.deleteMcpServer(server.id);
+
+    await expect(
+      m.importMod.importAgentBundle(exported.path, { runtimes: { ...HAVE_ALL, uvx: false } }),
+    ).rejects.toThrowError(/lacks uvx/);
+    expect(m.agents.loadAgent(agent.id)).toBe(null);
+    expect(m.mcp.getMcpServerByName('py-d')).toBe(null);
+    expect(existsSync(m.paths.paths.agentDir(agent.id))).toBe(false);
+    // No quarantine debris under .helm/tmp either.
+    const tmp = path.join(root, '.helm', 'tmp');
+    const leftovers = existsSync(tmp)
+      ? readdirSync(tmp).filter((n) => n.startsWith('import-'))
+      : [];
+    expect(leftovers).toEqual([]);
+  });
+
+  it('never exposes a secret on a read surface', () => {
+    const server = m.mcp.createMcpServer({
+      name: 'secret-e',
+      description: 'd',
+      config: {
+        transport: 'http',
+        url: 'https://mcp.example.com/',
+        headers: { Authorization: 'Bearer zzz' },
+      },
+      requires: [],
+    });
+    const view = m.mcp.redactMcpServer(server);
+    expect(JSON.stringify(view)).not.toContain('zzz');
+    expect(view.config.transport === 'http' && view.config.headers.Authorization).toBe('<set>');
+    // Sending the redacted view back keeps the stored secret.
+    const updated = m.mcp.updateMcpServer(server.id, {
+      description: 'renamed',
+      config: view.config as typeof server.config,
+    })!;
+    expect(updated.config.transport === 'http' && updated.config.headers.Authorization).toBe(
+      'Bearer zzz',
+    );
   });
 });

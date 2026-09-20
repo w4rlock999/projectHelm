@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { mcpContentHash } from '../library/mcp-schema.ts';
 import {
   BundleDbSchema,
   BundleEnvelopeSchema,
@@ -159,6 +160,8 @@ const EMPTY = {
   agent: AGENT,
   tools: [],
   agentToolIds: [],
+  mcpServers: [],
+  agentMcpServerIds: [],
   gateways: [],
   chats: [],
   heartbeats: [],
@@ -260,5 +263,55 @@ describe('BundleDbSchema', () => {
       ],
     };
     expect(BundleDbSchema.safeParse(bad).success).toBe(false);
+  });
+});
+
+describe('BundleDbSchema — mcp servers (v3)', () => {
+  const MCP_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3311';
+  const config = {
+    transport: 'stdio' as const,
+    command: 'npx' as const,
+    args: ['-y', '@modelcontextprotocol/server-fetch'],
+    env: { TOKEN: 'secret' },
+  };
+  const server = {
+    id: MCP_ID,
+    name: 'fetch',
+    description: 'fetches',
+    config,
+    requires: ['npx' as const],
+    contentHash: mcpContentHash({ config, requires: ['npx'] }),
+    createdAt: 1,
+    updatedAt: 1,
+  };
+
+  it('accepts a server and its join', () => {
+    const ok = { ...EMPTY, mcpServers: [server], agentMcpServerIds: [MCP_ID] };
+    expect(BundleDbSchema.safeParse(ok).success).toBe(true);
+  });
+
+  it('refuses a join that names a server the bundle does not carry', () => {
+    const bad = { ...EMPTY, agentMcpServerIds: [MCP_ID] };
+    expect(BundleDbSchema.safeParse(bad).success).toBe(false);
+  });
+
+  it('refuses two servers with one name — the mcp.json key', () => {
+    const other = { ...server, id: '3f2504e0-4f89-41d3-9a0c-0305e82c3312' };
+    expect(BundleDbSchema.safeParse({ ...EMPTY, mcpServers: [server, other] }).success).toBe(false);
+  });
+
+  it('constrains the command to the runtime enum: a bundle picks a runtime, never a binary', () => {
+    const bad = { ...server, config: { ...config, command: '/bin/sh' } };
+    expect(BundleDbSchema.safeParse({ ...EMPTY, mcpServers: [bad] }).success).toBe(false);
+  });
+
+  it('is strict about config keys the CLI would honour but helm does not render', () => {
+    const bad = { ...server, config: { ...config, cwd: '/' } };
+    expect(BundleDbSchema.safeParse({ ...EMPTY, mcpServers: [bad] }).success).toBe(false);
+  });
+
+  it('refuses a name that could not be an mcp.json key or an mcp__ prefix', () => {
+    const bad = { ...server, name: '../x' };
+    expect(BundleDbSchema.safeParse({ ...EMPTY, mcpServers: [bad] }).success).toBe(false);
   });
 });
