@@ -515,13 +515,13 @@ invents an install command.
 
 ### Decisions
 
-| Decision        | Choice                                                                                                                                                                                                                                              |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Two channels    | HTTP through the tunnel answers questions (facts, probes, status). SSH exec (`ssh … bash -s -- args < recipe`) changes things: recipes, upgrade, restart, a box with no daemon yet. The script travels on stdin, so nothing is copied to the remote.  |
-| Power model     | Declarative recipes are agent-callable (the provision endpoint takes an agent id and a kind filter, never package names). Raw `helm remote exec` exists for the operator's terminal only: the CLI spawns ssh itself; no HTTP endpoint runs a command. |
-| Saved login     | `remotes.ssh_identity_file` (a path on this machine, never key material). Null = ssh's choice via `~/.ssh/config`.                                                                                                                                  |
-| Symmetric prefix| helm owns `.helm/machine/venv`, `.helm/node_modules`, `.helm/machine/ms-playwright` on both machines and prepends them to every spawned agent's PATH (P1), so a tool's `#!/usr/bin/env python3` finds the same packages on the laptop and the VPS.     |
-| "100% synced"   | One report: helm build + claude version + runtimes, declared machine requirements (P1), harness parity, env keys (P3). `fail` is what ship preflight refuses on; `warn` is tolerated drift; `skip` is not applicable.                                 |
+| Decision         | Choice                                                                                                                                                                                                                                                |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Two channels     | HTTP through the tunnel answers questions (facts, probes, status). SSH exec (`ssh … bash -s -- args < recipe`) changes things: recipes, upgrade, restart, a box with no daemon yet. The script travels on stdin, so nothing is copied to the remote.  |
+| Power model      | Declarative recipes are agent-callable (the provision endpoint takes an agent id and a kind filter, never package names). Raw `helm remote exec` exists for the operator's terminal only: the CLI spawns ssh itself; no HTTP endpoint runs a command. |
+| Saved login      | `remotes.ssh_identity_file` (a path on this machine, never key material). Null = ssh's choice via `~/.ssh/config`.                                                                                                                                    |
+| Symmetric prefix | helm owns `.helm/machine/venv`, `.helm/node_modules`, `.helm/machine/ms-playwright` on both machines and prepends them to every spawned agent's PATH (P1), so a tool's `#!/usr/bin/env python3` finds the same packages on the laptop and the VPS.    |
+| "100% synced"    | One report: helm build + claude version + runtimes, declared machine requirements (P1), harness parity, env keys (P3). `fail` is what ship preflight refuses on; `warn` is tolerated drift; `skip` is not applicable.                                 |
 
 **Security baseline.** Shipping a tool already gives a local agent root code
 execution on the VPS (the daemon runs as root and tools run via Bash), and a
@@ -536,8 +536,8 @@ the transport.
 ### P0 — reach and see (shipped)
 
 - **Saved login.** `remotes.ssh_identity_file` (migration 0014); `helm remote
-  add … --identity <keyfile>`, `helm remote set <id> --identity <keyfile> |
-  --no-identity`, an "SSH identity file" field in the add dialog. The tunnel
+add … --identity <keyfile>`, `helm remote set <id> --identity <keyfile> |
+--no-identity`, an "SSH identity file" field in the add dialog. The tunnel
   and every exec build their ssh argv from one `sshBaseArgs()`
   (`src/server/machine/transport.ts`): `-i … -o IdentitiesOnly=yes` when a key
   is saved, and `--` before the destination. `sshTarget` is now validated on
