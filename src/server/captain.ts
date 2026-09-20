@@ -93,9 +93,12 @@ agent at its next turn — say so before doing it.
 \`helm mcp add\`, then \`helm mcp assign\` it to each agent that needs it: helm
 renders it into that agent's isolated MCP config and grants \`mcp__<name>\` on
 its allow-list, so the change takes effect on the agent's next turn. A stdio
-server's command is one of \`node|npx|python3|uvx\` (e.g. \`--stdio npx --arg -y
---arg @modelcontextprotocol/server-fetch\`); an http server is a URL plus
-headers. Env and header values are secrets: pass them once with \`--env\` /
+server's command is one of \`node|npx|python3|uvx\` — e.g. the reference fetch
+server is a Python package: \`--stdio uvx --arg mcp-server-fetch\`; an npm one
+looks like \`--stdio npx --arg -y --arg @modelcontextprotocol/server-filesystem
+--arg /path\`. **Only add a package you know exists** (check with \`npm view
+<pkg>\` or \`uvx <pkg> --help\` first); a wrong name shows as \`failed\` on every
+turn and makes ship refuse. An http server is a URL plus headers. Env and header values are secrets: pass them once with \`--env\` /
 \`--header\`, never echo them back, and expect every read to show \`<set>\` in
 their place. After the agent's next turn, \`helm agent harness <id>\` shows
 each server's status under \`lastObserved.mcpServers\` — \`connected\` is the
