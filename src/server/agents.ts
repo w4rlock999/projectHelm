@@ -5,6 +5,7 @@ import { db } from '../db/index.ts';
 import { agents } from '../db/schema.ts';
 import { paths, SHARED_SESSION_KEY } from './paths.ts';
 import { syncAgentTools } from './tools.ts';
+import { listAgentMcpServers } from './library/mcp.ts';
 import { DEFAULT_ALLOWED_TOOLS, DEFAULT_MODEL } from './adapter/claude.ts';
 import { getHarnessDefaults } from './harness/defaults.ts';
 import {
@@ -213,7 +214,8 @@ export function agentRuntime(a: Agent): {
     mcpConfigFile: paths.agentHarnessMcp(a.id),
     pluginDirs: [],
     profile: resolvedHarnessProfile(a),
-    mcpServerNames: [],
+    // One `mcp__<name>` allow-list entry per assigned server (harnessAllowedTools).
+    mcpServerNames: listAgentMcpServers(a.id).map((s) => s.name),
     hasSkills: false,
   };
   for (const t of harnessAllowedTools(harness)) if (!base.includes(t)) base.push(t);

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { BUNDLE_FORMAT_VERSION } from '../../version.ts';
 import { HarnessProfileSchema } from '../harness/profile.ts';
+import { LibraryNameSchema, McpServerConfigSchema, RuntimeSchema } from '../library/mcp-schema.ts';
 
 // The agent bundle: the wire and on-disk format for ship & recall.
 //
@@ -41,6 +42,9 @@ export type BundleErrorCode =
   | 'unsafe-path'
   | 'conflict'
   | 'tool-conflict'
+  | 'mcp-conflict'
+  /** The bundle needs a runtime (node, npx, python3, uvx) this machine lacks. */
+  | 'requires'
   | 'operator'
   | 'tar';
 
@@ -93,6 +97,7 @@ export type BundleEnvelope = z.infer<typeof BundleEnvelopeSchema>;
 
 export const BundleContentsSchema = z.object({
   tools: z.number().int().nonnegative(),
+  mcpServers: z.number().int().nonnegative(),
   gateways: z.number().int().nonnegative(),
   chats: z.number().int().nonnegative(),
   heartbeats: z.number().int().nonnegative(),
@@ -109,7 +114,16 @@ export const BundleManifestSchema = z.object({
   helmVersion: z.string().min(1),
   exportedAt: z.iso.datetime(),
   agent: z.object({ id: Id, name: z.string().min(1).max(200) }),
-  requires: z.object({ harness: z.literal('claude-code') }),
+  requires: z.object({
+    harness: z.literal('claude-code'),
+    /**
+     * Union of every bundled MCP server's `requires`. Checked against the
+     * receiver's detected runtimes before anything is written (import) and
+     * against the remote's advertised ones before anything is deactivated
+     * (ship preflight), so a missing `uvx` is a sentence, not a 3am failure.
+     */
+    runtimes: z.array(RuntimeSchema).default([]),
+  }),
   contents: BundleContentsSchema,
   /**
    * sha256 of db.json's exact bytes. The manifest is the root of trust for the
@@ -161,6 +175,24 @@ export const BundleToolSchema = z.object({
   description: z.string().max(4000),
   interpreter: Interpreter,
   source: z.string(),
+  /** Declared hash. ALWAYS recomputed on import; a mismatch is an integrity failure. */
+  contentHash: z.string().regex(/^[0-9a-f]{64}$/),
+  createdAt: EpochSeconds,
+  updatedAt: EpochSeconds,
+});
+
+/**
+ * A library MCP server. `config` carries env/header values in plaintext —
+ * the same posture as gateway tokens, and the reason a bundle is 0600 and
+ * moves only over the SSH tunnel. `command` is constrained to the runtime
+ * enum by McpServerConfigSchema, so a bundle picks a runtime, never a binary.
+ */
+export const BundleMcpServerSchema = z.strictObject({
+  id: Id,
+  name: LibraryNameSchema,
+  description: z.string().max(4000),
+  config: McpServerConfigSchema,
+  requires: z.array(RuntimeSchema),
   /** Declared hash. ALWAYS recomputed on import; a mismatch is an integrity failure. */
   contentHash: z.string().regex(/^[0-9a-f]{64}$/),
   createdAt: EpochSeconds,
@@ -219,6 +251,9 @@ export const BundleDbSchema = z
     tools: z.array(BundleToolSchema).max(500),
     /** agent_tools, flattened: the join carries no data beyond its timestamp. */
     agentToolIds: z.array(Id).max(500),
+    mcpServers: z.array(BundleMcpServerSchema).max(100),
+    /** agent_mcp_servers, flattened. */
+    agentMcpServerIds: z.array(Id).max(100),
     gateways: z.array(BundleGatewaySchema).max(50),
     chats: z.array(BundleChatSchema).max(10_000),
     heartbeats: z.array(BundleHeartbeatSchema).max(500),
@@ -241,6 +276,22 @@ export const BundleDbSchema = z
     for (const id of d.agentToolIds) {
       if (!toolIds.has(id))
         ctx.addIssue({ code: 'custom', message: `agent_tools references missing tool ${id}` });
+    }
+
+    const mcpIds = new Set(d.mcpServers.map((s) => s.id));
+    if (dup(d.mcpServers.map((s) => s.id)))
+      ctx.addIssue({ code: 'custom', message: 'duplicate mcp server id' });
+    // Mirrors mcp_servers_name_uq: the name is the mcp.json key.
+    if (dup(d.mcpServers.map((s) => s.name)))
+      ctx.addIssue({ code: 'custom', message: 'duplicate mcp server name' });
+    if (dup(d.agentMcpServerIds))
+      ctx.addIssue({ code: 'custom', message: 'duplicate agent_mcp_servers row' });
+    for (const id of d.agentMcpServerIds) {
+      if (!mcpIds.has(id))
+        ctx.addIssue({
+          code: 'custom',
+          message: `agent_mcp_servers references missing mcp server ${id}`,
+        });
     }
     for (const g of d.gateways) {
       if (g.agentId !== d.agent.id)

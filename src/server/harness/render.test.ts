@@ -13,9 +13,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EMPTY_PROFILE } from './profile.ts';
 import {
   ARGV_OWNED_SETTINGS_KEYS,
+  harnessMcpJson,
   harnessSettingsJson,
   MCP_TIMEOUT_MS,
   renderHarnessFiles,
+  type RenderMcpServer,
 } from './render.ts';
 
 let root: string;
@@ -28,12 +30,12 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-const render = () =>
+const render = (mcpServers: RenderMcpServer[] = []) =>
   renderHarnessFiles({
     harnessDir: harnessDir(),
     workspaceDir: workspaceDir(),
     profile: { ...EMPTY_PROFILE, effort: 'high' },
-    mcpServers: [],
+    mcpServers,
     skills: [],
     plugins: [],
   });
@@ -81,6 +83,44 @@ describe('renderHarnessFiles', () => {
     expect(existsSync(path.join(workspaceDir(), 'CLAUDE.local.md'))).toBe(false);
     expect(existsSync(path.join(dot, 'skills'))).toBe(true);
     expect(readFileSync(path.join(workspaceDir(), 'notes.md'), 'utf8')).toBe('kept');
+  });
+
+  it('renders assigned MCP servers into mcp.json in the CLI shape, name-sorted, secrets included', () => {
+    const r = render([
+      {
+        name: 'zulu',
+        config: { transport: 'http', url: 'https://mcp.example.com/mcp', headers: {} },
+      },
+      {
+        name: 'fetch',
+        config: {
+          transport: 'stdio',
+          command: 'npx',
+          args: ['-y', '@modelcontextprotocol/server-fetch'],
+          env: { TOKEN: 'shh' },
+        },
+      },
+    ]);
+    const mcp = JSON.parse(readFileSync(r.mcpConfigFile, 'utf8'));
+    expect(Object.keys(mcp.mcpServers)).toEqual(['fetch', 'zulu']);
+    expect(mcp.mcpServers.fetch).toEqual({
+      type: 'stdio',
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-fetch'],
+      env: { TOKEN: 'shh' },
+    });
+    // No empty `headers` key: the file says only what is set.
+    expect(mcp.mcpServers.zulu).toEqual({ type: 'http', url: 'https://mcp.example.com/mcp' });
+    expect(r.mcpServerNames).toEqual(['fetch', 'zulu']);
+    // The file carries a secret, so the mode matters.
+    expect(statSync(r.mcpConfigFile).mode & 0o777).toBe(0o600);
+  });
+
+  it('drops a server from mcp.json when it is no longer assigned', () => {
+    render([{ name: 'a', config: { transport: 'http', url: 'https://x.test/', headers: {} } }]);
+    const again = render();
+    expect(JSON.parse(readFileSync(again.mcpConfigFile, 'utf8'))).toEqual({ mcpServers: {} });
+    expect(harnessMcpJson([])).toEqual({ mcpServers: {} });
   });
 
   it('empties stale plugin dirs and is idempotent', () => {

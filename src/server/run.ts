@@ -7,6 +7,8 @@ import {
   fingerprintFromInit,
   type HarnessFingerprint,
 } from './harness/fingerprint.ts';
+import { listAgentMcpServers } from './library/mcp.ts';
+import { mcpSecretValues, scrubSecrets } from './library/mcp-schema.ts';
 import { paths, SHARED_SESSION_KEY } from './paths.ts';
 import { getInternalToken } from './remote-auth.ts';
 import {
@@ -303,7 +305,10 @@ export function runAgentTurn(
         // such a run as `ok` and the remote's import smoke turn would pass on
         // an agent that can never run.
         isError = true;
-        const why = stderrTail?.trim();
+        // The tail is persisted in the ledger and shown in the console, and an
+        // MCP server that dies at start-up may have echoed its environment.
+        const secrets = listAgentMcpServers(agentId).flatMap((s) => mcpSecretValues(s.config));
+        const why = stderrTail ? scrubSecrets(stderrTail, secrets).trim() : '';
         text = `claude exited with code ${code} before producing a result${why ? `: ${why}` : ''}`;
       }
       markRunFinished(runId, { code, isError, text, harness });

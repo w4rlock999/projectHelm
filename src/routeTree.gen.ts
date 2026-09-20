@@ -11,10 +11,12 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ToolsRouteImport } from './routes/tools'
 import { Route as RemotesRouteImport } from './routes/remotes'
+import { Route as McpRouteImport } from './routes/mcp'
 import { Route as CaptainRouteImport } from './routes/captain'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiToolsRouteImport } from './routes/api/tools'
 import { Route as ApiRemotesRouteImport } from './routes/api/remotes'
+import { Route as ApiMcpRouteImport } from './routes/api/mcp'
 import { Route as AgentsIdRouteImport } from './routes/agents.$id'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api/trpc.$'
 import { Route as ApiToolsIdRouteImport } from './routes/api/tools.$id'
@@ -27,6 +29,7 @@ import { Route as ApiRemoteResumeRouteImport } from './routes/api/remote.resume'
 import { Route as ApiRemotePauseRouteImport } from './routes/api/remote.pause'
 import { Route as ApiRemoteInfoRouteImport } from './routes/api/remote.info'
 import { Route as ApiRemoteImportRouteImport } from './routes/api/remote.import'
+import { Route as ApiMcpIdRouteImport } from './routes/api/mcp.$id'
 import { Route as ApiAgentsListRouteImport } from './routes/api/agents.list'
 import { Route as ApiAgentsCreateRouteImport } from './routes/api/agents.create'
 import { Route as ApiRemotesIdPingRouteImport } from './routes/api/remotes_.$id.ping'
@@ -35,6 +38,7 @@ import { Route as ApiAgentsIdToolsRouteImport } from './routes/api/agents.$id.to
 import { Route as ApiAgentsIdShipRouteImport } from './routes/api/agents.$id.ship'
 import { Route as ApiAgentsIdRunsRouteImport } from './routes/api/agents.$id.runs'
 import { Route as ApiAgentsIdMessagesRouteImport } from './routes/api/agents.$id.messages'
+import { Route as ApiAgentsIdMcpRouteImport } from './routes/api/agents.$id.mcp'
 import { Route as ApiAgentsIdInfoRouteImport } from './routes/api/agents.$id.info'
 import { Route as ApiAgentsIdHeartbeatsRouteImport } from './routes/api/agents.$id.heartbeats'
 import { Route as ApiAgentsIdHarnessRouteImport } from './routes/api/agents.$id.harness'
@@ -43,6 +47,7 @@ import { Route as ApiRemoteAgentsIdStatusRouteImport } from './routes/api/remote
 import { Route as ApiRemoteAgentsIdExportRouteImport } from './routes/api/remote.agents.$id.export'
 import { Route as ApiRemoteAgentsIdDeleteRouteImport } from './routes/api/remote.agents.$id.delete'
 import { Route as ApiAgentsIdToolsToolIdRouteImport } from './routes/api/agents.$id.tools.$toolId'
+import { Route as ApiAgentsIdMcpServerIdRouteImport } from './routes/api/agents.$id.mcp.$serverId'
 import { Route as ApiAgentsIdHeartbeatsHbIdRouteImport } from './routes/api/agents.$id.heartbeats.$hbId'
 
 const ToolsRoute = ToolsRouteImport.update({
@@ -53,6 +58,11 @@ const ToolsRoute = ToolsRouteImport.update({
 const RemotesRoute = RemotesRouteImport.update({
   id: '/remotes',
   path: '/remotes',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const McpRoute = McpRouteImport.update({
+  id: '/mcp',
+  path: '/mcp',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CaptainRoute = CaptainRouteImport.update({
@@ -73,6 +83,11 @@ const ApiToolsRoute = ApiToolsRouteImport.update({
 const ApiRemotesRoute = ApiRemotesRouteImport.update({
   id: '/api/remotes',
   path: '/api/remotes',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMcpRoute = ApiMcpRouteImport.update({
+  id: '/api/mcp',
+  path: '/api/mcp',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AgentsIdRoute = AgentsIdRouteImport.update({
@@ -135,6 +150,11 @@ const ApiRemoteImportRoute = ApiRemoteImportRouteImport.update({
   path: '/api/remote/import',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMcpIdRoute = ApiMcpIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ApiMcpRoute,
+} as any)
 const ApiAgentsListRoute = ApiAgentsListRouteImport.update({
   id: '/api/agents/list',
   path: '/api/agents/list',
@@ -173,6 +193,11 @@ const ApiAgentsIdRunsRoute = ApiAgentsIdRunsRouteImport.update({
 const ApiAgentsIdMessagesRoute = ApiAgentsIdMessagesRouteImport.update({
   id: '/api/agents/$id/messages',
   path: '/api/agents/$id/messages',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAgentsIdMcpRoute = ApiAgentsIdMcpRouteImport.update({
+  id: '/api/agents/$id/mcp',
+  path: '/api/agents/$id/mcp',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAgentsIdInfoRoute = ApiAgentsIdInfoRouteImport.update({
@@ -215,6 +240,11 @@ const ApiAgentsIdToolsToolIdRoute = ApiAgentsIdToolsToolIdRouteImport.update({
   path: '/$toolId',
   getParentRoute: () => ApiAgentsIdToolsRoute,
 } as any)
+const ApiAgentsIdMcpServerIdRoute = ApiAgentsIdMcpServerIdRouteImport.update({
+  id: '/$serverId',
+  path: '/$serverId',
+  getParentRoute: () => ApiAgentsIdMcpRoute,
+} as any)
 const ApiAgentsIdHeartbeatsHbIdRoute =
   ApiAgentsIdHeartbeatsHbIdRouteImport.update({
     id: '/$hbId',
@@ -225,13 +255,16 @@ const ApiAgentsIdHeartbeatsHbIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/captain': typeof CaptainRoute
+  '/mcp': typeof McpRoute
   '/remotes': typeof RemotesRoute
   '/tools': typeof ToolsRoute
   '/agents/$id': typeof AgentsIdRoute
+  '/api/mcp': typeof ApiMcpRouteWithChildren
   '/api/remotes': typeof ApiRemotesRouteWithChildren
   '/api/tools': typeof ApiToolsRouteWithChildren
   '/api/agents/create': typeof ApiAgentsCreateRoute
   '/api/agents/list': typeof ApiAgentsListRoute
+  '/api/mcp/$id': typeof ApiMcpIdRoute
   '/api/remote/import': typeof ApiRemoteImportRoute
   '/api/remote/info': typeof ApiRemoteInfoRoute
   '/api/remote/pause': typeof ApiRemotePauseRoute
@@ -247,6 +280,7 @@ export interface FileRoutesByFullPath {
   '/api/agents/$id/harness': typeof ApiAgentsIdHarnessRoute
   '/api/agents/$id/heartbeats': typeof ApiAgentsIdHeartbeatsRouteWithChildren
   '/api/agents/$id/info': typeof ApiAgentsIdInfoRoute
+  '/api/agents/$id/mcp': typeof ApiAgentsIdMcpRouteWithChildren
   '/api/agents/$id/messages': typeof ApiAgentsIdMessagesRoute
   '/api/agents/$id/runs': typeof ApiAgentsIdRunsRoute
   '/api/agents/$id/ship': typeof ApiAgentsIdShipRoute
@@ -254,6 +288,7 @@ export interface FileRoutesByFullPath {
   '/api/remotes/$id/pause': typeof ApiRemotesIdPauseRoute
   '/api/remotes/$id/ping': typeof ApiRemotesIdPingRoute
   '/api/agents/$id/heartbeats/$hbId': typeof ApiAgentsIdHeartbeatsHbIdRoute
+  '/api/agents/$id/mcp/$serverId': typeof ApiAgentsIdMcpServerIdRoute
   '/api/agents/$id/tools/$toolId': typeof ApiAgentsIdToolsToolIdRoute
   '/api/remote/agents/$id/delete': typeof ApiRemoteAgentsIdDeleteRoute
   '/api/remote/agents/$id/export': typeof ApiRemoteAgentsIdExportRoute
@@ -262,13 +297,16 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/captain': typeof CaptainRoute
+  '/mcp': typeof McpRoute
   '/remotes': typeof RemotesRoute
   '/tools': typeof ToolsRoute
   '/agents/$id': typeof AgentsIdRoute
+  '/api/mcp': typeof ApiMcpRouteWithChildren
   '/api/remotes': typeof ApiRemotesRouteWithChildren
   '/api/tools': typeof ApiToolsRouteWithChildren
   '/api/agents/create': typeof ApiAgentsCreateRoute
   '/api/agents/list': typeof ApiAgentsListRoute
+  '/api/mcp/$id': typeof ApiMcpIdRoute
   '/api/remote/import': typeof ApiRemoteImportRoute
   '/api/remote/info': typeof ApiRemoteInfoRoute
   '/api/remote/pause': typeof ApiRemotePauseRoute
@@ -284,6 +322,7 @@ export interface FileRoutesByTo {
   '/api/agents/$id/harness': typeof ApiAgentsIdHarnessRoute
   '/api/agents/$id/heartbeats': typeof ApiAgentsIdHeartbeatsRouteWithChildren
   '/api/agents/$id/info': typeof ApiAgentsIdInfoRoute
+  '/api/agents/$id/mcp': typeof ApiAgentsIdMcpRouteWithChildren
   '/api/agents/$id/messages': typeof ApiAgentsIdMessagesRoute
   '/api/agents/$id/runs': typeof ApiAgentsIdRunsRoute
   '/api/agents/$id/ship': typeof ApiAgentsIdShipRoute
@@ -291,6 +330,7 @@ export interface FileRoutesByTo {
   '/api/remotes/$id/pause': typeof ApiRemotesIdPauseRoute
   '/api/remotes/$id/ping': typeof ApiRemotesIdPingRoute
   '/api/agents/$id/heartbeats/$hbId': typeof ApiAgentsIdHeartbeatsHbIdRoute
+  '/api/agents/$id/mcp/$serverId': typeof ApiAgentsIdMcpServerIdRoute
   '/api/agents/$id/tools/$toolId': typeof ApiAgentsIdToolsToolIdRoute
   '/api/remote/agents/$id/delete': typeof ApiRemoteAgentsIdDeleteRoute
   '/api/remote/agents/$id/export': typeof ApiRemoteAgentsIdExportRoute
@@ -300,13 +340,16 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/captain': typeof CaptainRoute
+  '/mcp': typeof McpRoute
   '/remotes': typeof RemotesRoute
   '/tools': typeof ToolsRoute
   '/agents/$id': typeof AgentsIdRoute
+  '/api/mcp': typeof ApiMcpRouteWithChildren
   '/api/remotes': typeof ApiRemotesRouteWithChildren
   '/api/tools': typeof ApiToolsRouteWithChildren
   '/api/agents/create': typeof ApiAgentsCreateRoute
   '/api/agents/list': typeof ApiAgentsListRoute
+  '/api/mcp/$id': typeof ApiMcpIdRoute
   '/api/remote/import': typeof ApiRemoteImportRoute
   '/api/remote/info': typeof ApiRemoteInfoRoute
   '/api/remote/pause': typeof ApiRemotePauseRoute
@@ -322,6 +365,7 @@ export interface FileRoutesById {
   '/api/agents/$id/harness': typeof ApiAgentsIdHarnessRoute
   '/api/agents/$id/heartbeats': typeof ApiAgentsIdHeartbeatsRouteWithChildren
   '/api/agents/$id/info': typeof ApiAgentsIdInfoRoute
+  '/api/agents/$id/mcp': typeof ApiAgentsIdMcpRouteWithChildren
   '/api/agents/$id/messages': typeof ApiAgentsIdMessagesRoute
   '/api/agents/$id/runs': typeof ApiAgentsIdRunsRoute
   '/api/agents/$id/ship': typeof ApiAgentsIdShipRoute
@@ -329,6 +373,7 @@ export interface FileRoutesById {
   '/api/remotes_/$id/pause': typeof ApiRemotesIdPauseRoute
   '/api/remotes_/$id/ping': typeof ApiRemotesIdPingRoute
   '/api/agents/$id/heartbeats/$hbId': typeof ApiAgentsIdHeartbeatsHbIdRoute
+  '/api/agents/$id/mcp/$serverId': typeof ApiAgentsIdMcpServerIdRoute
   '/api/agents/$id/tools/$toolId': typeof ApiAgentsIdToolsToolIdRoute
   '/api/remote/agents/$id/delete': typeof ApiRemoteAgentsIdDeleteRoute
   '/api/remote/agents/$id/export': typeof ApiRemoteAgentsIdExportRoute
@@ -339,13 +384,16 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/captain'
+    | '/mcp'
     | '/remotes'
     | '/tools'
     | '/agents/$id'
+    | '/api/mcp'
     | '/api/remotes'
     | '/api/tools'
     | '/api/agents/create'
     | '/api/agents/list'
+    | '/api/mcp/$id'
     | '/api/remote/import'
     | '/api/remote/info'
     | '/api/remote/pause'
@@ -361,6 +409,7 @@ export interface FileRouteTypes {
     | '/api/agents/$id/harness'
     | '/api/agents/$id/heartbeats'
     | '/api/agents/$id/info'
+    | '/api/agents/$id/mcp'
     | '/api/agents/$id/messages'
     | '/api/agents/$id/runs'
     | '/api/agents/$id/ship'
@@ -368,6 +417,7 @@ export interface FileRouteTypes {
     | '/api/remotes/$id/pause'
     | '/api/remotes/$id/ping'
     | '/api/agents/$id/heartbeats/$hbId'
+    | '/api/agents/$id/mcp/$serverId'
     | '/api/agents/$id/tools/$toolId'
     | '/api/remote/agents/$id/delete'
     | '/api/remote/agents/$id/export'
@@ -376,13 +426,16 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/captain'
+    | '/mcp'
     | '/remotes'
     | '/tools'
     | '/agents/$id'
+    | '/api/mcp'
     | '/api/remotes'
     | '/api/tools'
     | '/api/agents/create'
     | '/api/agents/list'
+    | '/api/mcp/$id'
     | '/api/remote/import'
     | '/api/remote/info'
     | '/api/remote/pause'
@@ -398,6 +451,7 @@ export interface FileRouteTypes {
     | '/api/agents/$id/harness'
     | '/api/agents/$id/heartbeats'
     | '/api/agents/$id/info'
+    | '/api/agents/$id/mcp'
     | '/api/agents/$id/messages'
     | '/api/agents/$id/runs'
     | '/api/agents/$id/ship'
@@ -405,6 +459,7 @@ export interface FileRouteTypes {
     | '/api/remotes/$id/pause'
     | '/api/remotes/$id/ping'
     | '/api/agents/$id/heartbeats/$hbId'
+    | '/api/agents/$id/mcp/$serverId'
     | '/api/agents/$id/tools/$toolId'
     | '/api/remote/agents/$id/delete'
     | '/api/remote/agents/$id/export'
@@ -413,13 +468,16 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/captain'
+    | '/mcp'
     | '/remotes'
     | '/tools'
     | '/agents/$id'
+    | '/api/mcp'
     | '/api/remotes'
     | '/api/tools'
     | '/api/agents/create'
     | '/api/agents/list'
+    | '/api/mcp/$id'
     | '/api/remote/import'
     | '/api/remote/info'
     | '/api/remote/pause'
@@ -435,6 +493,7 @@ export interface FileRouteTypes {
     | '/api/agents/$id/harness'
     | '/api/agents/$id/heartbeats'
     | '/api/agents/$id/info'
+    | '/api/agents/$id/mcp'
     | '/api/agents/$id/messages'
     | '/api/agents/$id/runs'
     | '/api/agents/$id/ship'
@@ -442,6 +501,7 @@ export interface FileRouteTypes {
     | '/api/remotes_/$id/pause'
     | '/api/remotes_/$id/ping'
     | '/api/agents/$id/heartbeats/$hbId'
+    | '/api/agents/$id/mcp/$serverId'
     | '/api/agents/$id/tools/$toolId'
     | '/api/remote/agents/$id/delete'
     | '/api/remote/agents/$id/export'
@@ -451,9 +511,11 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CaptainRoute: typeof CaptainRoute
+  McpRoute: typeof McpRoute
   RemotesRoute: typeof RemotesRoute
   ToolsRoute: typeof ToolsRoute
   AgentsIdRoute: typeof AgentsIdRoute
+  ApiMcpRoute: typeof ApiMcpRouteWithChildren
   ApiRemotesRoute: typeof ApiRemotesRouteWithChildren
   ApiToolsRoute: typeof ApiToolsRouteWithChildren
   ApiAgentsCreateRoute: typeof ApiAgentsCreateRoute
@@ -471,6 +533,7 @@ export interface RootRouteChildren {
   ApiAgentsIdHarnessRoute: typeof ApiAgentsIdHarnessRoute
   ApiAgentsIdHeartbeatsRoute: typeof ApiAgentsIdHeartbeatsRouteWithChildren
   ApiAgentsIdInfoRoute: typeof ApiAgentsIdInfoRoute
+  ApiAgentsIdMcpRoute: typeof ApiAgentsIdMcpRouteWithChildren
   ApiAgentsIdMessagesRoute: typeof ApiAgentsIdMessagesRoute
   ApiAgentsIdRunsRoute: typeof ApiAgentsIdRunsRoute
   ApiAgentsIdShipRoute: typeof ApiAgentsIdShipRoute
@@ -496,6 +559,13 @@ declare module '@tanstack/react-router' {
       path: '/remotes'
       fullPath: '/remotes'
       preLoaderRoute: typeof RemotesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mcp': {
+      id: '/mcp'
+      path: '/mcp'
+      fullPath: '/mcp'
+      preLoaderRoute: typeof McpRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/captain': {
@@ -524,6 +594,13 @@ declare module '@tanstack/react-router' {
       path: '/api/remotes'
       fullPath: '/api/remotes'
       preLoaderRoute: typeof ApiRemotesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/mcp': {
+      id: '/api/mcp'
+      path: '/api/mcp'
+      fullPath: '/api/mcp'
+      preLoaderRoute: typeof ApiMcpRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/agents/$id': {
@@ -610,6 +687,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiRemoteImportRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/mcp/$id': {
+      id: '/api/mcp/$id'
+      path: '/$id'
+      fullPath: '/api/mcp/$id'
+      preLoaderRoute: typeof ApiMcpIdRouteImport
+      parentRoute: typeof ApiMcpRoute
+    }
     '/api/agents/list': {
       id: '/api/agents/list'
       path: '/api/agents/list'
@@ -664,6 +748,13 @@ declare module '@tanstack/react-router' {
       path: '/api/agents/$id/messages'
       fullPath: '/api/agents/$id/messages'
       preLoaderRoute: typeof ApiAgentsIdMessagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/agents/$id/mcp': {
+      id: '/api/agents/$id/mcp'
+      path: '/api/agents/$id/mcp'
+      fullPath: '/api/agents/$id/mcp'
+      preLoaderRoute: typeof ApiAgentsIdMcpRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/agents/$id/info': {
@@ -722,6 +813,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAgentsIdToolsToolIdRouteImport
       parentRoute: typeof ApiAgentsIdToolsRoute
     }
+    '/api/agents/$id/mcp/$serverId': {
+      id: '/api/agents/$id/mcp/$serverId'
+      path: '/$serverId'
+      fullPath: '/api/agents/$id/mcp/$serverId'
+      preLoaderRoute: typeof ApiAgentsIdMcpServerIdRouteImport
+      parentRoute: typeof ApiAgentsIdMcpRoute
+    }
     '/api/agents/$id/heartbeats/$hbId': {
       id: '/api/agents/$id/heartbeats/$hbId'
       path: '/$hbId'
@@ -731,6 +829,17 @@ declare module '@tanstack/react-router' {
     }
   }
 }
+
+interface ApiMcpRouteChildren {
+  ApiMcpIdRoute: typeof ApiMcpIdRoute
+}
+
+const ApiMcpRouteChildren: ApiMcpRouteChildren = {
+  ApiMcpIdRoute: ApiMcpIdRoute,
+}
+
+const ApiMcpRouteWithChildren =
+  ApiMcpRoute._addFileChildren(ApiMcpRouteChildren)
 
 interface ApiRemotesRouteChildren {
   ApiRemotesIdRoute: typeof ApiRemotesIdRoute
@@ -769,6 +878,18 @@ const ApiAgentsIdHeartbeatsRouteWithChildren =
     ApiAgentsIdHeartbeatsRouteChildren,
   )
 
+interface ApiAgentsIdMcpRouteChildren {
+  ApiAgentsIdMcpServerIdRoute: typeof ApiAgentsIdMcpServerIdRoute
+}
+
+const ApiAgentsIdMcpRouteChildren: ApiAgentsIdMcpRouteChildren = {
+  ApiAgentsIdMcpServerIdRoute: ApiAgentsIdMcpServerIdRoute,
+}
+
+const ApiAgentsIdMcpRouteWithChildren = ApiAgentsIdMcpRoute._addFileChildren(
+  ApiAgentsIdMcpRouteChildren,
+)
+
 interface ApiAgentsIdToolsRouteChildren {
   ApiAgentsIdToolsToolIdRoute: typeof ApiAgentsIdToolsToolIdRoute
 }
@@ -783,9 +904,11 @@ const ApiAgentsIdToolsRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CaptainRoute: CaptainRoute,
+  McpRoute: McpRoute,
   RemotesRoute: RemotesRoute,
   ToolsRoute: ToolsRoute,
   AgentsIdRoute: AgentsIdRoute,
+  ApiMcpRoute: ApiMcpRouteWithChildren,
   ApiRemotesRoute: ApiRemotesRouteWithChildren,
   ApiToolsRoute: ApiToolsRouteWithChildren,
   ApiAgentsCreateRoute: ApiAgentsCreateRoute,
@@ -803,6 +926,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAgentsIdHarnessRoute: ApiAgentsIdHarnessRoute,
   ApiAgentsIdHeartbeatsRoute: ApiAgentsIdHeartbeatsRouteWithChildren,
   ApiAgentsIdInfoRoute: ApiAgentsIdInfoRoute,
+  ApiAgentsIdMcpRoute: ApiAgentsIdMcpRouteWithChildren,
   ApiAgentsIdMessagesRoute: ApiAgentsIdMessagesRoute,
   ApiAgentsIdRunsRoute: ApiAgentsIdRunsRoute,
   ApiAgentsIdShipRoute: ApiAgentsIdShipRoute,

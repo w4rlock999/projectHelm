@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import type { HarnessFingerprint } from '../server/harness/fingerprint.ts';
 import type { HarnessProfile } from '../server/harness/profile.ts';
+import type { McpServerConfig, Runtime } from '../server/library/mcp-schema.ts';
 import {
   index,
   integer,
@@ -108,6 +109,52 @@ export const agentTools = sqliteTable(
       .default(sql`(unixepoch())`),
   },
   (t) => [primaryKey({ columns: [t.agentId, t.toolId] })],
+);
+
+// ── MCP server library (harness H2) ─────────────────────────────────────────
+// Shared MCP server *definitions*, owned by no agent. Assigning one to an agent
+// renders it into that agent's isolated `harness/mcp.json` and grants
+// `mcp__<name>` on its allow-list. `name` is unique: it is the key in mcp.json
+// and the prefix of every tool the server exposes, so two servers with one
+// name could not both be assigned to an agent.
+export const mcpServers = sqliteTable(
+  'mcp_servers',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    description: text('description').notNull(),
+    // McpServerConfig (library/mcp-schema.ts): stdio (runtime command + args +
+    // env) or http (url + headers). Env/header values are secrets, plaintext
+    // at rest like gateways.token — redacted on every read surface.
+    config: text('config', { mode: 'json' }).$type<McpServerConfig>().notNull(),
+    // Runtimes the server needs on the machine that runs the agent (the stdio
+    // command is always among them). Ship preflight checks the remote has them.
+    requires: text('requires', { mode: 'json' }).$type<Runtime[]>().notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer('updated_at', { mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (t) => [uniqueIndex('mcp_servers_name_uq').on(t.name)],
+);
+
+// Many-to-many: which library MCP servers each agent has. Mirrors agent_tools.
+export const agentMcpServers = sqliteTable(
+  'agent_mcp_servers',
+  {
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    mcpServerId: text('mcp_server_id')
+      .notNull()
+      .references(() => mcpServers.id, { onDelete: 'cascade' }),
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (t) => [primaryKey({ columns: [t.agentId, t.mcpServerId] })],
 );
 
 // A gateway is the agent's credentialed binding to a messaging platform
@@ -314,6 +361,8 @@ export type Agent = typeof agents.$inferSelect;
 export type NewAgent = typeof agents.$inferInsert;
 export type Tool = typeof tools.$inferSelect;
 export type AgentTool = typeof agentTools.$inferSelect;
+export type McpServer = typeof mcpServers.$inferSelect;
+export type AgentMcpServer = typeof agentMcpServers.$inferSelect;
 export type Gateway = typeof gateways.$inferSelect;
 export type GatewayChat = typeof gatewaysChat.$inferSelect;
 export type Heartbeat = typeof heartbeats.$inferSelect;

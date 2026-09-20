@@ -9,6 +9,8 @@ import { loadAgent } from '../agents.ts';
 import { exportAgentBundle } from '../bundle/export.ts';
 import { importAgentBundle } from '../bundle/import.ts';
 import type { HarnessFingerprint } from '../harness/fingerprint.ts';
+import { requiredRuntimesForAgent } from '../library/mcp.ts';
+import { missingRuntimes } from '../library/mcp-schema.ts';
 import { localHarnessInfo } from '../remote-info.ts';
 import { drainAgentRuns } from '../run.ts';
 import { drainAgentPollers, reconcileGateways } from '../runtime/gateways.ts';
@@ -228,6 +230,28 @@ async function runShip(run: TransferRun, opts: { withData?: boolean }): Promise<
       throw new ShipRefusal('preflight', claude.message!, 'preflight');
     }
     if (claude.level === 'patch') step(run, 'preflight', claude.message!);
+    // The agent's MCP servers are exec'd on the remote at every turn, so the
+    // runtimes they name must be there. Refused here, before deactivation,
+    // rather than by the remote's import (which would also refuse, but after
+    // the bundle was built and the agent taken offline).
+    const needed = requiredRuntimesForAgent(agentId);
+    if (needed.length > 0) {
+      if (!remoteClaude.runtimes) {
+        throw new ShipRefusal(
+          'preflight',
+          `this agent's MCP servers need ${needed.join(', ')} but the remote does not advertise its runtimes — upgrade it`,
+          'preflight',
+        );
+      }
+      const missing = missingRuntimes(needed, remoteClaude.runtimes);
+      if (missing.length > 0) {
+        throw new ShipRefusal(
+          'preflight',
+          `remote lacks ${missing.join(', ')}, which this agent's MCP servers need`,
+          'preflight',
+        );
+      }
+    }
     if (info.paused) {
       // Shipping into a paused daemon lands an agent that cannot run.
       throw new ShipRefusal(
@@ -318,7 +342,11 @@ async function runShip(run: TransferRun, opts: { withData?: boolean }): Promise<
         'done',
         `remote harness: claude-code ${response.harnessFingerprint.claudeVersion}, ` +
           `${response.harnessFingerprint.skills.length} skills, ` +
-          `${response.harnessFingerprint.mcpServers.length} mcp servers`,
+          (response.harnessFingerprint.mcpServers.length
+            ? `mcp servers ${response.harnessFingerprint.mcpServers
+                .map((s) => `${s.name} ${s.status}`)
+                .join(', ')}`
+            : 'no mcp servers'),
       );
     }
     step(run, 'done', `now running on ${remote.name}`);
