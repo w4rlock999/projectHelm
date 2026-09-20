@@ -262,11 +262,18 @@ export const runs = sqliteTable(
     // 'chat' | 'heartbeat:<id>' | 'telegram:<chatId>' | 'manual' — matches the
     // `source` already written to the ndjson helm_meta line.
     source: text('source').notNull(),
+    // Which conversation the turn ran in: SHARED_SESSION_KEY ('shared') for the
+    // agent/console session, or a gateways_chat.id under sessionScope='chat'.
+    // `source` alone cannot say — a telegram turn's scope depends on the agent
+    // setting *at the time it ran*. Null = pre-migration row, treated as shared.
+    // This is what lets the console replay exactly the turns Claude remembers.
+    sessionKey: text('session_key'),
     // 'queued'   reserved by reserveRun, not yet started
     // 'running'  turn in flight
     // 'ok' | 'error'
     // 'refused'  never ran (budget / paused / deployed)
-    // 'interrupted' the process died mid-run; set by the boot sweep
+    // 'interrupted' the turn stopped before a result: the process died mid-run
+    //               (boot sweep) or the caller aborted it (browser refresh/Stop)
     // NOTE: 'refused' and 'interrupted' rows are excluded from the budget count
     // — counting refusals would keep the window permanently full.
     status: text('status').notNull(),

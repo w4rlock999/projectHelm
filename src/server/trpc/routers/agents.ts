@@ -15,6 +15,7 @@ import {
   updateAgentSystemPrompt,
 } from '../../agents.ts';
 import { HarnessProfileError, HarnessProfileSchema } from '../../harness/profile.ts';
+import { listHistory } from '../../history.ts';
 import { listRuns } from '../../runs.ts';
 import { publicProcedure, router } from '../init.ts';
 
@@ -56,6 +57,25 @@ export const agentsRouter = router({
       lastObserved: agent.lastHarness,
     };
   }),
+  /**
+   * The console conversation, replayed from the run logs — what the chat view
+   * shows after a refresh. Shared-session turns only. `cursor` is the oldest
+   * loaded turn's startedAt (epoch ms) and pages backwards; named `cursor`
+   * because that is what tRPC's useInfiniteQuery requires of the input.
+   */
+  history: publicProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        limit: z.number().int().min(1).max(200).optional(),
+        cursor: z.number().int().positive().nullish(),
+      }),
+    )
+    .query(({ input }) => {
+      const agent = loadAgent(input.id);
+      if (!agent) throw new TRPCError({ code: 'NOT_FOUND' });
+      return listHistory(input.id, { limit: input.limit, before: input.cursor ?? undefined });
+    }),
 
   create: publicProcedure
     .input(

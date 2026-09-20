@@ -9,7 +9,13 @@ import {
 } from './harness/fingerprint.ts';
 import { paths, SHARED_SESSION_KEY } from './paths.ts';
 import { getInternalToken } from './remote-auth.ts';
-import { markRunErrored, markRunFinished, markRunStarted, reserveRun } from './runs.ts';
+import {
+  markRunErrored,
+  markRunFinished,
+  markRunInterrupted,
+  markRunStarted,
+  reserveRun,
+} from './runs.ts';
 import { renderAgentHarness } from './tools.ts';
 import type { ClaudeEvent } from './adapter/types.ts';
 import type { Agent } from '../db/schema.ts';
@@ -144,7 +150,8 @@ export function runAgentTurn(
   // *claims* the slot, which is what keeps a batch of simultaneous triggers from
   // all passing the same budget check.
   const source = opts.source ?? 'manual';
-  const { runId } = reserveRun(agentId, { source, prompt });
+  const sessionKey = opts.sessionKey ?? SHARED_SESSION_KEY;
+  const { runId } = reserveRun(agentId, { source, prompt, sessionKey });
   // Fires at reservation rather than turn start — strictly better for the SSE
   // chat route, which can emit its `open` event without waiting in line.
   opts.onRunId?.(runId);
@@ -192,10 +199,7 @@ export function runAgentTurn(
     // the session store is per-conversation ('shared' unless the caller passed a
     // chat key). Per-chat session stores are created here on first use.
     const storeDir = paths.agentStoreDir(agentId);
-    const sessionStoreDir = paths.agentSessionStoreDir(
-      agentId,
-      opts.sessionKey ?? SHARED_SESSION_KEY,
-    );
+    const sessionStoreDir = paths.agentSessionStoreDir(agentId, sessionKey);
     mkdirSync(storeDir, { recursive: true });
     mkdirSync(sessionStoreDir, { recursive: true });
     // Cross-session recall is a per-agent authz control (not a caller opt): when
@@ -282,6 +286,16 @@ export function runAgentTurn(
           }
         },
       });
+      if (!sawResult && signal.aborted) {
+        // The caller cancelled (browser refresh, Stop). The adapter SIGTERMs the
+        // child and resolves normally, so this is the only place that knows the
+        // turn was cut short rather than finished — and the console's history
+        // replay needs the ledger to say so.
+        isError = true;
+        text = 'The turn was interrupted before it produced a result.';
+        markRunInterrupted(runId, { code, harness });
+        return { runId, text, sessionId, code, isError, harness };
+      }
       if (!sawResult && code !== 0) {
         // The CLI died without ever emitting a `result` — a bad flag, a
         // malformed settings file, a missing binary on PATH. `isError` is only
@@ -298,7 +312,10 @@ export function runAgentTurn(
       markRunErrored(runId, err instanceof Error ? err.message : String(err), harness);
       throw err;
     } finally {
-      logStream.end();
+      // Awaited on purpose: the SSE route emits `end` once this promise settles
+      // and the console immediately refetches history, which reads this file.
+      // An un-awaited end() could leave the `result` line still in the buffer.
+      await new Promise<void>((resolve) => logStream.end(resolve));
     }
   });
 }

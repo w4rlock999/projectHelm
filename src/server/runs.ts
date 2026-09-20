@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, gt, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import { db } from '../db/index.ts';
 import { runs, type Run } from '../db/schema.ts';
 import { loadAgent } from './agents.ts';
 import type { HarnessFingerprint } from './harness/fingerprint.ts';
 import { deployRefusal } from './deploy-state.ts';
+import { SHARED_SESSION_KEY } from './paths.ts';
 import { getPauseState, isPaused } from './runtime/pause.ts';
 
 // The run ledger: admission control in front of every agent turn, plus the
@@ -80,16 +81,21 @@ function truncate(s: string): string {
   return s.length > RUN_TEXT_LIMIT ? s.slice(0, RUN_TEXT_LIMIT) : s;
 }
 
-function recordRefusal(
-  agentId: string,
-  meta: { source: string; prompt: string },
-  reason: RefusalReason,
-): void {
+/** What a caller tells the ledger about the turn it is about to run. */
+export interface RunMeta {
+  source: string;
+  prompt: string;
+  /** Session the turn runs in; defaults to the shared agent/console session. */
+  sessionKey?: string;
+}
+
+function recordRefusal(agentId: string, meta: RunMeta, reason: RefusalReason): void {
   db.insert(runs)
     .values({
       id: randomUUID(),
       agentId,
       source: meta.source,
+      sessionKey: meta.sessionKey ?? SHARED_SESSION_KEY,
       status: 'refused',
       refusedReason: reason,
       prompt: truncate(meta.prompt),
@@ -110,10 +116,7 @@ function recordRefusal(
  *
  * Must stay fully synchronous for that reason. Do not add `await` here.
  */
-export function reserveRun(
-  agentId: string,
-  meta: { source: string; prompt: string },
-): { runId: string } {
+export function reserveRun(agentId: string, meta: RunMeta): { runId: string } {
   const agent = loadAgent(agentId);
   if (!agent) {
     // No row to hang a ledger entry off (agent_id is a FK), so nothing recorded.
@@ -166,6 +169,7 @@ export function reserveRun(
       id: runId,
       agentId,
       source: meta.source,
+      sessionKey: meta.sessionKey ?? SHARED_SESSION_KEY,
       status: 'queued',
       prompt: truncate(meta.prompt),
       startedAt: new Date(),
@@ -216,6 +220,30 @@ export function markRunErrored(
     .run();
 }
 
+/**
+ * A turn the caller aborted before a result (browser refresh, the Stop button).
+ * The adapter SIGTERMs the child and resolves normally, so without this the
+ * ledger recorded such a run as `ok` with an empty result — and the console,
+ * replaying it, would have shown "(no output)" for a turn that was cut short.
+ *
+ * Deliberately `interrupted` rather than `error`: it shares the boot sweep's
+ * meaning (stopped mid-run) and its budget exemption.
+ */
+export function markRunInterrupted(
+  runId: string,
+  r: { code: number | null; harness?: HarnessFingerprint | null } = { code: null },
+): void {
+  db.update(runs)
+    .set({
+      status: 'interrupted',
+      exitCode: r.code,
+      harness: r.harness ?? null,
+      endedAt: new Date(),
+    })
+    .where(eq(runs.id, runId))
+    .run();
+}
+
 export function listRuns(agentId: string, limit = 20): Run[] {
   return db
     .select()
@@ -224,6 +252,38 @@ export function listRuns(agentId: string, limit = 20): Run[] {
     .orderBy(desc(runs.startedAt))
     .limit(limit)
     .all();
+}
+
+/**
+ * The turns that make up one conversation, oldest first: every run of
+ * `agentId` in `sessionKey` that actually ran (refusals never reached Claude,
+ * so they are not part of what it remembers). Pre-migration rows have a null
+ * key and are treated as the shared session — every one of them was.
+ *
+ * Paginates backwards from `before` (epoch ms, exclusive) so the console can
+ * load earlier turns on demand; `hasMore` says whether anything older exists.
+ */
+export function listSessionRuns(
+  agentId: string,
+  sessionKey: string,
+  opts: { limit?: number; before?: number } = {},
+): { runs: Run[]; hasMore: boolean } {
+  const limit = opts.limit ?? 50;
+  const conditions = [
+    eq(runs.agentId, agentId),
+    or(eq(runs.sessionKey, sessionKey), isNull(runs.sessionKey)),
+    ne(runs.status, 'refused'),
+  ];
+  if (opts.before !== undefined) conditions.push(lt(runs.startedAt, new Date(opts.before)));
+  const page = db
+    .select()
+    .from(runs)
+    .where(and(...conditions))
+    .orderBy(desc(runs.startedAt), desc(runs.id))
+    .limit(limit + 1)
+    .all();
+  const hasMore = page.length > limit;
+  return { runs: page.slice(0, limit).reverse(), hasMore };
 }
 
 export function getRun(runId: string): Run | null {

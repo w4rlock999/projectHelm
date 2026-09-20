@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "4d620661-fca2-41b7-a6ae-1d81ab720e92",
-  "prevId": "53af2c4a-440f-49d6-9063-e9ea61fd19dd",
+  "id": "8a77dc85-c0ec-4a7b-9123-262406f6a7a5",
+  "prevId": "4d620661-fca2-41b7-a6ae-1d81ab720e92",
   "tables": {
     "agent_tools": {
       "name": "agent_tools",
@@ -177,6 +177,13 @@
         },
         "last_harness": {
           "name": "last_harness",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "harness": {
+          "name": "harness",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
