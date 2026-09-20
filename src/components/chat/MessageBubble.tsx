@@ -17,13 +17,24 @@ export interface ToolUseSegment {
 export type AssistantSegment = TextSegment | ToolUseSegment;
 
 export type ChatMessage =
-  | { id: string; role: 'user'; text: string }
+  | {
+      id: string;
+      role: 'user';
+      text: string;
+      /**
+       * Where the prompt came from when it was not typed here: 'heartbeat:<id>'
+       * or 'telegram:<chatId>'. Those turns ran in the same Claude session, so
+       * the console shows them — badged, so a prompt nobody typed is not a
+       * mystery. Absent for console turns.
+       */
+      source?: string;
+    }
   | {
       id: string;
       role: 'assistant';
-      // May contain undefined holes when Claude emits content blocks at
-      // non-contiguous indices; MessageBubble filters them out before render.
-      segments: Array<AssistantSegment | undefined>;
+      // Dense and ordered: the reducer in src/lib/chat-replay.ts assigns each
+      // content block the next slot, across every message in the turn.
+      segments: AssistantSegment[];
       complete: boolean;
       cost?: number;
       durationMs?: number;
@@ -48,8 +59,17 @@ export function MessageBubble({
   const isGlass = variant === 'glass';
 
   if (message.role === 'user') {
+    const badge = message.source ? sourceLabel(message.source) : null;
     return (
-      <div className="flex justify-end">
+      <div className="flex flex-col items-end gap-1">
+        {badge ? (
+          <Badge
+            variant="outline"
+            className={cn('text-[10px]', isGlass && 'border-white/20 text-[var(--warm-ink-soft)]')}
+          >
+            {badge}
+          </Badge>
+        ) : null}
         <div
           className={cn(
             'max-w-[80%] rounded-lg px-4 py-2 text-sm whitespace-pre-wrap',
@@ -62,7 +82,7 @@ export function MessageBubble({
     );
   }
 
-  const visible = message.segments.filter((s): s is AssistantSegment => Boolean(s));
+  const visible = message.segments;
   const hasContent = visible.length > 0;
   const mutedText = isGlass ? 'text-[var(--warm-ink-faint)]' : 'text-muted-foreground';
   return (
@@ -143,6 +163,35 @@ export function MessageBubble({
           </p>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/** 'heartbeat:<id>' → "heartbeat", 'telegram:<chatId>' → "telegram"; anything else verbatim. */
+function sourceLabel(source: string): string {
+  const kind = source.split(':')[0];
+  return kind === 'heartbeat' || kind === 'telegram' ? kind : source;
+}
+
+/**
+ * Marks the point where the Claude session id changed — a manual reset, or a
+ * pruned transcript that made the next turn start over. Turns above it are
+ * still on screen but no longer in Claude's memory, which is exactly the thing
+ * a reader would otherwise get wrong.
+ */
+export function SessionDivider({ variant = 'default' }: { variant?: 'default' | 'glass' }) {
+  const isGlass = variant === 'glass';
+  return (
+    <div
+      role="separator"
+      className={cn(
+        'flex items-center gap-3 py-1 text-[10px] tracking-wide uppercase',
+        isGlass ? 'text-[var(--warm-ink-faint)]' : 'text-muted-foreground/70',
+      )}
+    >
+      <span className={cn('h-px flex-1', isGlass ? 'bg-white/15' : 'bg-border')} />
+      <span>New session — Claude no longer remembers the turns above</span>
+      <span className={cn('h-px flex-1', isGlass ? 'bg-white/15' : 'bg-border')} />
     </div>
   );
 }

@@ -78,6 +78,13 @@
       "when": 1789790656329,
       "tag": "0010_harness_fingerprint",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1789792145236,
+      "tag": "0011_run_session_key",
+      "breakpoints": true
     }
   ]
 }
