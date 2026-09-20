@@ -1,5 +1,8 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import net from 'node:net';
+import { parseSshTarget, sshBaseArgs } from '../machine/transport.ts';
+
+export { parseSshTarget };
 
 // SSH tunnel manager: every remote operation goes through
 // `ssh -N -L <ephemeralLocalPort>:127.0.0.1:<helmPort> <sshTarget>`. Using the
@@ -18,6 +21,8 @@ export interface TunnelTarget {
   id: string;
   sshTarget: string;
   helmPort: number;
+  /** `-i` identity file on this machine (machine parity P0); null/absent = ssh's choice. */
+  sshIdentityFile?: string | null;
 }
 
 interface TunnelHandle {
@@ -40,13 +45,6 @@ interface TunnelHandle {
 
 const tunnels: Map<string, TunnelHandle> =
   (globalThis as any).__helmTunnels ?? ((globalThis as any).__helmTunnels = new Map());
-
-/** Split 'user@host[:port]' into the ssh destination and an optional -p port. */
-export function parseSshTarget(sshTarget: string): { destination: string; port?: number } {
-  const m = /^(.+):(\d+)$/.exec(sshTarget);
-  if (m) return { destination: m[1], port: Number(m[2]) };
-  return { destination: sshTarget };
-}
 
 /** Ask the OS for a free loopback port (tiny TOCTOU window — acceptable). */
 function freePort(): Promise<number> {
@@ -86,6 +84,26 @@ function sshFailureMessage(handle: TunnelHandle, prefix = 'ssh tunnel failed'): 
   return tail ? `${prefix}: ${tail}` : prefix;
 }
 
+/**
+ * The full ssh argv for a tunnel. Pure so the identity/port/`--` handling is
+ * testable without spawning ssh. The shared options (BatchMode, keepalives,
+ * `-i`, `-p`) come from transport.ts so a tunnel and an exec agree.
+ */
+export function tunnelArgs(remote: TunnelTarget, localPort: number): string[] {
+  const { destination } = parseSshTarget(remote.sshTarget);
+  return [
+    '-N',
+    ...sshBaseArgs(remote),
+    '-o',
+    'ExitOnForwardFailure=yes',
+    '-L',
+    `127.0.0.1:${localPort}:127.0.0.1:${remote.helmPort}`,
+    // `--` so a destination can never be read as an option.
+    '--',
+    destination,
+  ];
+}
+
 function openTunnel(remote: TunnelTarget): TunnelHandle {
   const handle: TunnelHandle = {
     proc: null,
@@ -98,26 +116,7 @@ function openTunnel(remote: TunnelTarget): TunnelHandle {
 
   handle.ready = (async () => {
     handle.localPort = await freePort();
-    const { destination, port: sshPort } = parseSshTarget(remote.sshTarget);
-    const args = [
-      '-N',
-      // Fail fast on auth problems instead of hanging on a password prompt.
-      '-o',
-      'BatchMode=yes',
-      '-o',
-      'ExitOnForwardFailure=yes',
-      '-o',
-      'ConnectTimeout=10',
-      // Detect a dead connection within ~30s so stale tunnels don't linger.
-      '-o',
-      'ServerAliveInterval=15',
-      '-o',
-      'ServerAliveCountMax=2',
-      '-L',
-      `127.0.0.1:${handle.localPort}:127.0.0.1:${remote.helmPort}`,
-      ...(sshPort ? ['-p', String(sshPort)] : []),
-      destination,
-    ];
+    const args = tunnelArgs(remote, handle.localPort);
     const proc = spawn('ssh', args, { stdio: ['ignore', 'ignore', 'pipe'] });
     handle.proc = proc;
     proc.stderr?.on('data', (chunk: Buffer) => {

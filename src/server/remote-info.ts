@@ -6,6 +6,13 @@ import { db } from '../db/index.ts';
 import { agents } from '../db/schema.ts';
 import { BUNDLE_FORMAT_VERSION, HELM_BUILD, HELM_VERSION } from '../version.ts';
 import { config } from './config.ts';
+import {
+  machineEnv,
+  machineFacts,
+  MachineFactsSchema,
+  onPath,
+  versionOf,
+} from './machine/probe.ts';
 import { readRemoteJson } from './remote-auth.ts';
 import { isPaused } from './runtime/pause.ts';
 
@@ -66,6 +73,13 @@ export const RemoteInfoSchema = z.object({
    * bundle the local then cannot import.
    */
   bundleWrites: z.number().int().optional(),
+  // ── Added in machine parity P0 (same optionality rule) ────────────────────
+  /**
+   * What the machine under the daemon is: OS, uid/root/sudo, the app dir and
+   * absolute node/pnpm — what a check compares and what recipes need handed
+   * to them, since `ssh … bash -s` is a non-login shell with no nvm PATH.
+   */
+  machine: MachineFactsSchema.optional(),
 });
 export type RemoteInfo = z.infer<typeof RemoteInfoSchema>;
 
@@ -92,7 +106,10 @@ export function localHarnessInfo(): Promise<HarnessInfo> {
 async function probeClaude(): Promise<HarnessInfo> {
   const runtimes = await detectRuntimes();
   try {
-    const { stdout } = await execFileAsync('claude', ['--version'], { timeout: 15_000 });
+    const { stdout } = await execFileAsync('claude', ['--version'], {
+      timeout: 15_000,
+      env: machineEnv(),
+    });
     const version = /\d+[^\s]*/.exec(stdout.trim())?.[0] ?? null;
     // Headless: authed iff the OAuth token env is present and remote:init's
     // `claude -p ping` smoke test passed. Local: the CLI resolving at all
@@ -103,26 +120,6 @@ async function probeClaude(): Promise<HarnessInfo> {
     return { type: 'claude-code', version, authOk, runtimes };
   } catch {
     return { type: 'claude-code', version: null, authOk: false, runtimes };
-  }
-}
-
-async function versionOf(bin: string, args: string[]): Promise<string | null> {
-  try {
-    const { stdout } = await execFileAsync(bin, args, { timeout: 5_000 });
-    return (/\d+[^\s]*/.exec(stdout.trim())?.[0] ?? stdout.trim()) || null;
-  } catch {
-    return null;
-  }
-}
-
-async function onPath(bin: string): Promise<boolean> {
-  try {
-    await execFileAsync(process.platform === 'win32' ? 'where' : 'which', [bin], {
-      timeout: 5_000,
-    });
-    return true;
-  } catch {
-    return false;
   }
 }
 
@@ -158,6 +155,7 @@ export async function getRemoteInfo(): Promise<RemoteInfo> {
     paused: isPaused(),
     deployedAgentCount: all.filter((a) => a.deployedTo !== null).length,
     schemaVersion: appliedSchemaVersion(),
+    machine: await machineFacts(),
   };
 }
 

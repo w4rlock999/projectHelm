@@ -17,5 +17,6 @@ export type GatewayChat = RouterOutputs['gateways']['chats'][number];
 export type Heartbeat = RouterOutputs['heartbeats']['list'][number];
 export type Remote = RouterOutputs['remotes']['list'][number];
 export type RemotePing = RouterOutputs['remotes']['ping'];
+export type RemoteCheck = RouterOutputs['remotes']['check'];
 export type Run = RouterOutputs['agents']['runs'][number];
 export type HistoryTurn = RouterOutputs['agents']['history']['turns'][number];

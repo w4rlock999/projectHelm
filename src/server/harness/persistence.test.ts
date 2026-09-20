@@ -123,6 +123,8 @@ describe('RemoteInfoSchema compatibility', () => {
     expect(m.remoteInfo.RemoteInfoSchema.safeParse(info).success).toBe(true);
     expect(info.helmBuild).toBeTypeOf('string');
     expect(info.harnesses[0].runtimes).toBeDefined();
+    // Machine parity P0: the facts ride on the same handshake.
+    expect(info.machine?.appDir).toBeTypeOf('string');
     // Migrated by hand, so drizzle's bookkeeping table does not exist here.
     expect(info.schemaVersion).toBeUndefined();
   });

@@ -33,6 +33,13 @@ export const paths = {
   /** Untrusted extraction target. Nothing here is trusted until it is walked. */
   bundleQuarantineDir: (id: string) => path.join(helmRoot, 'tmp', `import-${id}`),
 
+  // ── Machine parity (P0) ──────────────────────────────────────────────────
+  // Logs of what helm ran on a machine: provision steps, upgrades, operator
+  // exec notes. `remoteId` is the remotes row id, or 'local' for this machine.
+  remoteOpsDir: (remoteId: string) => path.join(helmRoot, 'remotes', remoteId, 'ops'),
+  remoteOpLog: (remoteId: string, opId: string) =>
+    path.join(helmRoot, 'remotes', remoteId, 'ops', `${opId}.log`),
+
   agentsDir: path.join(helmRoot, 'agents'),
   agentDir: (id: string) => path.join(helmRoot, 'agents', id),
   agentWorkspaceDir: (id: string) => path.join(helmRoot, 'agents', id, 'workspace'),

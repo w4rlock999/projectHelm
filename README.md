@@ -76,6 +76,21 @@ pnpm build
 pnpm preview
 ```
 
+### The helm CLI from a terminal
+
+The same `helm` script the captain agent has in its `tools/` runs from the repo
+root against a running `pnpm dev`:
+
+```bash
+pnpm helm remote ls
+pnpm helm remote check <remoteId>            # is the VPS configured like this machine?
+pnpm helm remote exec <remoteId> -- uname -a # operator only: ssh with your keys
+pnpm helm --help
+```
+
+Point it elsewhere with `HELM_BASE_URL`. A local coding agent (Claude Code,
+Codex) working in this repo can drive the fleet the same way.
+
 ## Scripts
 
 | Command            | Description                                               |
@@ -85,6 +100,8 @@ pnpm preview
 | `pnpm preview`     | Preview the production build                              |
 | `pnpm typecheck`   | Type-check with `tsc --noEmit`                            |
 | `pnpm test`        | Run the Vitest suite                                      |
+| `pnpm helm …`      | The helm CLI against the running dev server               |
+| `pnpm remote:init` | On a VPS: pair this checkout as a headless daemon         |
 | `pnpm db:generate` | Generate a Drizzle migration from the schema              |
 | `pnpm db:migrate`  | Apply migrations to `.helm/db.sqlite`                     |
 | `pnpm db:studio`   | Open Drizzle Studio                                       |

@@ -4,6 +4,7 @@
 // daemon's REST endpoints; fleet ops need no agent id, only BASE (from env).
 // Runs as an ES module (the repo's package.json has "type":"module"), so use
 // a static import for fs rather than require().
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 const BASE = process.env.HELM_BASE_URL || 'http://localhost:3000';
 // Set by the daemon in headless mode; the /api surface requires auth there.
@@ -132,8 +133,10 @@ function usage() {
       '  helm agent get <id>\n' +
       '  helm tool ls\n' +
       '  helm mcp ls | helm mcp get <id>\n' +
-      '  helm remote ls\n' +
+      '  helm remote ls | helm remote get <id>\n' +
       '  helm remote ping <id>\n' +
+      '  helm remote check <id> [--agent <agentId>] [--json]   # is the remote configured like this machine?\n' +
+      '  helm remote ops <id> [--limit <n>]                    # what helm ran there\n' +
       '  helm agent runs <id> [--limit <n>]\n' +
       '  helm system status\n' +
       '  helm agent status <id>            # deploy state + transfer progress\n' +
@@ -152,8 +155,9 @@ function usage() {
       '  helm mcp rm <id>\n' +
       '  helm mcp assign <serverId> --agent <agentId>\n' +
       '  helm mcp unassign <serverId> --agent <agentId>\n' +
-      '  helm remote add --code <helm-connect:...> [--name <n>]\n' +
-      '  helm remote add --ssh <user@host[:port]> --token <t> [--port <helmPort>] [--name <n>]\n' +
+      '  helm remote add --code <helm-connect:...> [--name <n>] [--identity <keyfile>]\n' +
+      '  helm remote add --ssh <user@host[:port]> --token <t> [--port <helmPort>] [--name <n>] [--identity <keyfile>]\n' +
+      '  helm remote set <id> [--name <n>] [--identity <keyfile> | --no-identity]\n' +
       '  helm remote rm <id>\n' +
       '  helm remote pause <id> [--reason <r>] | helm remote resume <id>\n' +
       '  helm agent budget <id> --per-hour <n|off>\n' +
@@ -166,8 +170,51 @@ function usage() {
       '                          [--permission-mode <default|acceptEdits|dontAsk|off>] [--fallback-model <m|off>]\n' +
       '  helm agent harness <id> --clear    # back to the fleet defaults\n' +
       '  helm harness defaults              # the fleet defaults every agent inherits\n' +
-      '  helm harness defaults [--effort …] [--max-turns …] [--permission-mode …] [--fallback-model …]',
+      '  helm harness defaults [--effort …] [--max-turns …] [--permission-mode …] [--fallback-model …]\n' +
+      'operator terminal only (runs ssh from this process with your keys; not for fleet agents):\n' +
+      '  helm remote exec <id> -- <command…>   # run a command on the remote over its saved login',
   );
+}
+
+// `helm remote check` prints the report as a table unless --json. Exit 1 when
+// any row failed, so a script (or an agent) can gate a ship on it.
+function printReport(report) {
+  console.log(
+    (report.ok ? 'OK   ' : 'FAIL ') +
+      (report.remoteName || report.remoteId) +
+      ' — checked ' +
+      new Date(report.checkedAt).toISOString(),
+  );
+  const width = (k) => Math.max(...report.rows.map((r) => String(r[k] ?? '').length), 1);
+  const w = { area: width('area'), name: width('name'), expected: width('expected') };
+  const pad = (v, n) => String(v ?? '').padEnd(n);
+  for (const r of report.rows) {
+    console.log(
+      '  ' +
+        pad(r.status.toUpperCase(), 4) +
+        ' ' +
+        pad(r.area, w.area) +
+        ' ' +
+        pad(r.name, w.name) +
+        ' ' +
+        pad(r.expected ?? '-', w.expected) +
+        ' → ' +
+        (r.actual ?? '-') +
+        (r.fix ? '\n       fix: ' + r.fix : ''),
+    );
+  }
+}
+
+// ssh argv for `helm remote exec`, built here (this file has no repo imports)
+// and kept in step with sshBaseArgs in src/server/machine/transport.ts.
+function sshArgsFor(remote) {
+  const m = /^(.+):(\d+)$/.exec(remote.sshTarget);
+  const destination = m ? m[1] : remote.sshTarget;
+  const args = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10'];
+  if (remote.sshIdentityFile) args.push('-i', remote.sshIdentityFile, '-o', 'IdentitiesOnly=yes');
+  if (m) args.push('-p', m[2]);
+  args.push('--', destination);
+  return args;
 }
 
 // Translate `--effort high --max-turns off` into a profile patch: a value sets
@@ -468,6 +515,12 @@ function profilePatch(f) {
   } else if (cmd === 'remote') {
     if (sub === 'ls') {
       out(await get('/api/remotes'));
+    } else if (sub === 'get') {
+      if (!argv[2]) {
+        console.error('usage: helm remote get <id>');
+        process.exit(1);
+      }
+      out(await get('/api/remotes/' + argv[2]));
     } else if (sub === 'add') {
       const f = flags(argv.slice(2)).out;
       const body = {};
@@ -479,15 +532,78 @@ function profilePatch(f) {
         if (f.port) body.helmPort = Number(f.port);
       } else {
         console.error(
-          'usage: helm remote add --code <helm-connect:...> [--name <n>]\n' +
-            '       helm remote add --ssh <user@host[:port]> --token <t> [--port <helmPort>] [--name <n>]',
+          'usage: helm remote add --code <helm-connect:...> [--name <n>] [--identity <keyfile>]\n' +
+            '       helm remote add --ssh <user@host[:port]> --token <t> [--port <helmPort>] [--name <n>] [--identity <keyfile>]',
         );
         process.exit(1);
       }
       if (f.name) body.name = f.name;
+      if (f.identity) body.sshIdentityFile = f.identity;
       const r = await call('POST', '/api/remotes', body);
       console.log('added remote ' + r.remote.id + ' (' + r.remote.name + ')');
       out(r.info);
+    } else if (sub === 'set') {
+      const id = argv[2];
+      const f = flags(argv.slice(3)).out;
+      const patch = {};
+      if (f.name) patch.name = f.name;
+      if (f.identity) patch.sshIdentityFile = f.identity;
+      if (f['no-identity'] === 'true') patch.sshIdentityFile = null;
+      if (!id || Object.keys(patch).length === 0) {
+        console.error(
+          'usage: helm remote set <id> [--name <n>] [--identity <keyfile> | --no-identity]',
+        );
+        process.exit(1);
+      }
+      const r = await call('PATCH', '/api/remotes/' + id, patch);
+      console.log('updated remote ' + id + (r.info ? ' (handshake ok)' : ''));
+      out(r.remote);
+    } else if (sub === 'check') {
+      if (!argv[2]) {
+        console.error('usage: helm remote check <id> [--agent <agentId>] [--json]');
+        process.exit(1);
+      }
+      const f = flags(argv.slice(3)).out;
+      const report = await call(
+        'POST',
+        '/api/remotes/' + argv[2] + '/check',
+        f.agent ? { agentId: f.agent } : {},
+      );
+      if (f.json === 'true') out(report);
+      else printReport(report);
+      if (!report.ok) process.exit(1);
+    } else if (sub === 'ops') {
+      if (!argv[2]) {
+        console.error('usage: helm remote ops <id> [--limit <n>]');
+        process.exit(1);
+      }
+      const f = flags(argv.slice(3)).out;
+      const q = f.limit ? '?limit=' + encodeURIComponent(f.limit) : '';
+      out(await get('/api/remotes/' + argv[2] + '/ops' + q));
+    } else if (sub === 'exec') {
+      // Operator's terminal only. The server never runs a caller's command: the
+      // CLI reads the saved login and spawns ssh itself, with this process's
+      // keys and terminal, then records what ran in the ledger.
+      const id = argv[2];
+      const dash = argv.indexOf('--');
+      const command = dash >= 0 ? argv.slice(dash + 1) : argv.slice(3);
+      if (!id || command.length === 0) {
+        console.error('usage: helm remote exec <id> -- <command…>');
+        process.exit(1);
+      }
+      const remote = await get('/api/remotes/' + id);
+      const result = spawnSync('ssh', sshArgsFor(remote).concat(command), { stdio: 'inherit' });
+      const code = result.status === null ? null : result.status;
+      try {
+        await call('POST', '/api/remotes/' + id + '/ops', {
+          kind: 'exec-note',
+          argv: command,
+          code: code,
+        });
+      } catch {
+        /* best-effort: the command already ran */
+      }
+      process.exit(code === null ? 1 : code);
     } else if (sub === 'pause' || sub === 'resume') {
       if (!argv[2]) {
         console.error('usage: helm remote ' + sub + ' <id>');

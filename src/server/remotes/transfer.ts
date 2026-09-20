@@ -1,8 +1,9 @@
 import { createReadStream, createWriteStream, mkdirSync, statSync } from 'node:fs';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { z } from 'zod';
 import { BUNDLE_FORMAT_VERSION, HELM_VERSION } from '../../version.ts';
-import type { HarnessFingerprint } from '../harness/fingerprint.ts';
+import { HarnessFingerprintSchema, type HarnessFingerprint } from '../harness/fingerprint.ts';
 import { paths } from '../paths.ts';
 import { remoteFetch, RemoteError } from './client.ts';
 import type { TunnelTarget } from './tunnel.ts';
@@ -137,6 +138,21 @@ export async function downloadBundle(
 export const IMPORT_PENDING = 'pending' as const;
 
 /**
+ * What `/api/remote/agents/$id/status` answers. Loose and every field beyond
+ * `ok` optional, for the same reason as RemoteInfoSchema: a newer local side
+ * must keep reading an older daemon's status. The console renders it as-is;
+ * the machine check reads `lastHarness`.
+ */
+export const RemoteAgentStatusSchema = z.looseObject({
+  ok: z.boolean(),
+  paused: z.boolean().optional(),
+  agent: z.looseObject({ id: z.string(), name: z.string() }).optional(),
+  /** What the remote's CLI loaded on the agent's last turn there (machine parity P0). */
+  lastHarness: HarnessFingerprintSchema.nullable().optional(),
+});
+export type RemoteAgentStatus = z.infer<typeof RemoteAgentStatusSchema>;
+
+/**
  * Fetch a deployed agent's status. `null` means the remote does not have it;
  * `IMPORT_PENDING` (HTTP 202) means it is mid-import and the answer is not yet
  * knowable — callers deciding a transfer's outcome must wait, not conclude.
@@ -144,7 +160,7 @@ export const IMPORT_PENDING = 'pending' as const;
 export async function fetchRemoteAgentStatus(
   remote: TunnelTarget & { token: string },
   agentId: string,
-): Promise<unknown | null | typeof IMPORT_PENDING> {
+): Promise<RemoteAgentStatus | null | typeof IMPORT_PENDING> {
   const res = await remoteFetch(remote, {
     path: `/api/remote/agents/${agentId}/status`,
     timeoutMs: 20_000,
@@ -152,7 +168,11 @@ export async function fetchRemoteAgentStatus(
   if (res.status === 404) return null;
   if (res.status === 202) return IMPORT_PENDING;
   if (!res.ok) throw new RemoteError('http', `remote returned HTTP ${res.status} on status`);
-  return await res.json();
+  const parsed = RemoteAgentStatusSchema.safeParse(await res.json());
+  if (!parsed.success) {
+    throw new RemoteError('protocol', 'remote agent status has an unexpected shape');
+  }
+  return parsed.data;
 }
 
 /** Confirm-delete after a successful recall. */

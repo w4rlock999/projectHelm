@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AddRemoteDialog } from '#/components/remotes/AddRemoteDialog';
 import { Button } from '#/components/ui/button';
 import { claudeSkew, type SkewLevel } from '#/lib/harness-version';
-import { trpc, type Remote, type RemotePing } from '#/lib/trpc';
+import { trpc, type Remote, type RemoteCheck, type RemotePing } from '#/lib/trpc';
 
 export const Route = createFileRoute('/remotes')({ component: RemotesPage });
 
@@ -34,6 +34,24 @@ function RemotesPage() {
     onError: (err) => alert(err.message),
   });
   const pauseMutation = trpc.remotes.setPaused.useMutation();
+  const checkMutation = trpc.remotes.check.useMutation();
+  const [checks, setChecks] = useState<Record<string, RemoteCheck | 'pending'>>({});
+  const check = (id: string) => {
+    setChecks((c) => ({ ...c, [id]: 'pending' }));
+    checkMutation.mutate(
+      { id },
+      {
+        onSuccess: (report) => setChecks((c) => ({ ...c, [id]: report })),
+        onError: (err) => {
+          alert(err.message);
+          setChecks((c) => {
+            const { [id]: _drop, ...rest } = c;
+            return rest;
+          });
+        },
+      },
+    );
+  };
 
   const ping = (id: string) => {
     setPings((p) => ({ ...p, [id]: 'pending' }));
@@ -92,6 +110,8 @@ function RemotesPage() {
               local={local}
               ping={pings[r.id]}
               onPing={() => ping(r.id)}
+              check={checks[r.id]}
+              onCheck={() => check(r.id)}
               onRemove={() => {
                 if (
                   confirm(
@@ -138,11 +158,47 @@ function SkewBadge({ level, title }: { level: SkewLevel; title: string }) {
   );
 }
 
+const STATUS_CLASS: Record<RemoteCheck['rows'][number]['status'], string> = {
+  ok: 'text-emerald-600',
+  warn: 'text-amber-600',
+  fail: 'text-red-600',
+  skip: 'text-muted-foreground',
+};
+
+/** The machine parity report: one line per row, `fix` under anything not green. */
+function CheckReportView({ report }: { report: RemoteCheck }) {
+  return (
+    <div className="bg-muted/30 mt-3 rounded-md border p-3 text-xs">
+      <p className={`mb-2 font-medium ${report.ok ? 'text-emerald-600' : 'text-red-600'}`}>
+        {report.ok ? 'Synced' : 'Not synced'} · checked{' '}
+        {new Date(report.checkedAt).toLocaleTimeString()}
+      </p>
+      <table className="w-full">
+        <tbody>
+          {report.rows.map((r, i) => (
+            <tr key={i} className="align-top">
+              <td className={`pr-2 font-mono uppercase ${STATUS_CLASS[r.status]}`}>{r.status}</td>
+              <td className="text-muted-foreground pr-2">{r.area}</td>
+              <td className="pr-2">{r.name}</td>
+              <td className="font-mono">
+                {r.expected ?? '-'} → {r.actual ?? '-'}
+                {r.fix && <div className="text-muted-foreground">fix: {r.fix}</div>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function RemoteRow({
   remote,
   local,
   ping,
   onPing,
+  check,
+  onCheck,
   onRemove,
   removing,
   onSetPaused,
@@ -152,6 +208,8 @@ function RemoteRow({
   local: LocalSide | null;
   ping: PingState | undefined;
   onPing: () => void;
+  check: RemoteCheck | 'pending' | undefined;
+  onCheck: () => void;
   onRemove: () => void;
   removing: boolean;
   onSetPaused: (paused: boolean) => void;
@@ -183,7 +241,10 @@ function RemoteRow({
           <p className="flex items-center gap-2 font-medium">
             <span aria-hidden className={`inline-block size-2 shrink-0 rounded-full ${dot}`} />
             {remote.name}{' '}
-            <span className="text-muted-foreground text-xs font-normal">{remote.sshTarget}</span>
+            <span className="text-muted-foreground text-xs font-normal">
+              {remote.sshTarget}
+              {remote.sshIdentityFile ? ` · key ${remote.sshIdentityFile}` : ''}
+            </span>
           </p>
           <p className="text-muted-foreground mt-0.5 text-sm">
             {version ? `helm ${version}` : 'never reached'}
@@ -211,6 +272,9 @@ function RemoteRow({
                 </span>
               );
             })}
+            {info?.machine
+              ? ` · ${info.machine.distro ? `${info.machine.distro.id} ${info.machine.distro.version ?? ''}`.trim() : info.machine.platform}/${info.machine.arch} · ${info.machine.root ? 'root' : info.machine.sudo ? 'sudo' : 'no sudo'}`
+              : ''}
             {info ? ` · ${info.agentCount} agent${info.agentCount === 1 ? '' : 's'}` : ''}
             {info?.deployedAgentCount ? ` (${info.deployedAgentCount} deployed)` : ''}
             {!info && lastSeen ? ` · last seen ${lastSeen.toLocaleString()}` : ''}
@@ -228,6 +292,7 @@ function RemoteRow({
           {ping && ping !== 'pending' && ping.ok && ping.warning && (
             <p className="mt-1 text-sm text-amber-600">{ping.warning}</p>
           )}
+          {check && check !== 'pending' && <CheckReportView report={check} />}
         </div>
         <div className="flex shrink-0 gap-2">
           {info?.paused !== undefined && (
@@ -242,6 +307,9 @@ function RemoteRow({
           )}
           <Button variant="outline" size="sm" disabled={ping === 'pending'} onClick={onPing}>
             {ping === 'pending' ? 'Pinging…' : 'Ping'}
+          </Button>
+          <Button variant="outline" size="sm" disabled={check === 'pending'} onClick={onCheck}>
+            {check === 'pending' ? 'Checking…' : 'Check'}
           </Button>
           <Button variant="ghost" size="sm" disabled={removing} onClick={onRemove}>
             Remove

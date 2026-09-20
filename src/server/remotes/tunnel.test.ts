@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseSshTarget, shouldReap } from './tunnel.ts';
+import { parseSshTarget, shouldReap, tunnelArgs } from './tunnel.ts';
 
 describe('parseSshTarget', () => {
   it('plain user@host', () => {
@@ -39,5 +39,27 @@ describe('shouldReap', () => {
 
   it('becomes reapable once the last lease is released', () => {
     expect(shouldReap({ leases: 0, lastUsedAt: now - 60 * 60_000 }, now)).toBe(true);
+  });
+});
+
+describe('tunnelArgs', () => {
+  it('forwards the port with -N, shares the base ssh options, and ends with -- destination', () => {
+    const args = tunnelArgs({ id: 'r', sshTarget: 'root@vps:2222', helmPort: 5555 }, 40000);
+    expect(args[0]).toBe('-N');
+    expect(args).toContain('BatchMode=yes');
+    expect(args).toContain('ExitOnForwardFailure=yes');
+    expect(args.slice(-2)).toEqual(['--', 'root@vps']);
+    expect(args[args.indexOf('-L') + 1]).toBe('127.0.0.1:40000:127.0.0.1:5555');
+    expect(args[args.indexOf('-p') + 1]).toBe('2222');
+    expect(args).not.toContain('-i');
+  });
+
+  it('adds the saved identity file', () => {
+    const args = tunnelArgs(
+      { id: 'r', sshTarget: 'root@vps', helmPort: 5555, sshIdentityFile: '/k' },
+      1,
+    );
+    expect(args[args.indexOf('-i') + 1]).toBe('/k');
+    expect(args).toContain('IdentitiesOnly=yes');
   });
 });

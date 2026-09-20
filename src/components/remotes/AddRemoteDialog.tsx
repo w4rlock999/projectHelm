@@ -25,6 +25,7 @@ export function AddRemoteDialog({ onClose }: { onClose: () => void }) {
   const [sshTarget, setSshTarget] = useState('');
   const [helmPort, setHelmPort] = useState('5555');
   const [token, setToken] = useState('');
+  const [identity, setIdentity] = useState('');
 
   const addMutation = trpc.remotes.add.useMutation({
     onSuccess: () => {
@@ -37,15 +38,19 @@ export function AddRemoteDialog({ onClose }: { onClose: () => void }) {
   const busy = addMutation.isPending;
 
   const submit = () => {
+    const common = {
+      name: name.trim() || undefined,
+      sshIdentityFile: identity.trim() || undefined,
+    };
     addMutation.mutate(
       manual
         ? {
-            name: name.trim() || undefined,
+            ...common,
             sshTarget: sshTarget.trim(),
             helmPort: Number(helmPort) || 5555,
             token: token.trim(),
           }
-        : { name: name.trim() || undefined, connectCode: code.trim() },
+        : { ...common, connectCode: code.trim() },
     );
   };
 
@@ -105,6 +110,16 @@ export function AddRemoteDialog({ onClose }: { onClose: () => void }) {
               </div>
             </>
           )}
+
+          <div className="grid gap-2">
+            <Label htmlFor="remote-identity">SSH identity file (optional)</Label>
+            <Input
+              id="remote-identity"
+              value={identity}
+              onChange={(e) => setIdentity(e.target.value)}
+              placeholder="~/.ssh/id_ed25519 — leave empty to let ssh choose"
+            />
+          </div>
 
           <div className="grid gap-2">
             <Label htmlFor="remote-name">Name (optional)</Label>

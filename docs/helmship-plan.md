@@ -495,3 +495,98 @@ Library tables `skills`, `plugins` with joins; trees on disk under
 and export; bundle format 4 carries `library/**`; the post-import fingerprint
 must show every declared skill/plugin present. The MCP slice above is the
 template: the same insert-or-reuse-or-fail import, the same `harnessDiff` gate.
+
+---
+
+## Machine parity (P0 → P4)
+
+_Drafted 2026-09-20. Status: **P0 implemented**; P1 (declared machine requirements) is the next build target._
+
+Harness ownership made the Claude Code side of an agent explicit data. The
+machine under it — CLI binaries, Python and Node packages, apt libraries,
+browser binaries, the credentials a tool needs in its environment — was still
+installed by hand over `ssh root@vps`, never declared and never verified. An
+agent that works here finds out on the VPS at 3am that `import playwright`
+fails. This section supersedes the earlier M-remote-3 text ("agent-led
+provisioning skill"): the direction inverts. Local helm drives fixed recipes
+_over SSH_ from the console; nothing is distributed to the VPS; an agent
+sequences `check → provision → check → ship` through the helm CLI and never
+invents an install command.
+
+### Decisions
+
+| Decision        | Choice                                                                                                                                                                                                                                              |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Two channels    | HTTP through the tunnel answers questions (facts, probes, status). SSH exec (`ssh … bash -s -- args < recipe`) changes things: recipes, upgrade, restart, a box with no daemon yet. The script travels on stdin, so nothing is copied to the remote.  |
+| Power model     | Declarative recipes are agent-callable (the provision endpoint takes an agent id and a kind filter, never package names). Raw `helm remote exec` exists for the operator's terminal only: the CLI spawns ssh itself; no HTTP endpoint runs a command. |
+| Saved login     | `remotes.ssh_identity_file` (a path on this machine, never key material). Null = ssh's choice via `~/.ssh/config`.                                                                                                                                  |
+| Symmetric prefix| helm owns `.helm/machine/venv`, `.helm/node_modules`, `.helm/machine/ms-playwright` on both machines and prepends them to every spawned agent's PATH (P1), so a tool's `#!/usr/bin/env python3` finds the same packages on the laptop and the VPS.     |
+| "100% synced"   | One report: helm build + claude version + runtimes, declared machine requirements (P1), harness parity, env keys (P3). `fail` is what ship preflight refuses on; `warn` is tolerated drift; `skip` is not applicable.                                 |
+
+**Security baseline.** Shipping a tool already gives a local agent root code
+execution on the VPS (the daemon runs as root and tools run via Bash), and a
+local agent runs as the developer user with `~/.ssh`. Locally the operator/agent
+boundary is therefore advisory; headless it is real. What this plan must not do
+is add a _new_ class of reach: no HTTP endpoint runs a caller-supplied command;
+package identity comes from declared requirements, never from a request body;
+the daemon's probe runs `command -v` for arbitrary names and `--version` only
+for an allowlist; names are regex-validated where declared and shell-quoted in
+the transport.
+
+### P0 — reach and see (shipped)
+
+- **Saved login.** `remotes.ssh_identity_file` (migration 0014); `helm remote
+  add … --identity <keyfile>`, `helm remote set <id> --identity <keyfile> |
+  --no-identity`, an "SSH identity file" field in the add dialog. The tunnel
+  and every exec build their ssh argv from one `sshBaseArgs()`
+  (`src/server/machine/transport.ts`): `-i … -o IdentitiesOnly=yes` when a key
+  is saved, and `--` before the destination. `sshTarget` is now validated on
+  the manual path. Changing the identity tears the cached tunnel down and
+  handshakes before saving.
+- **Transport.** `localTransport()` / `sshTransport(remote)` run a script from
+  stdin under `bash -s -- args…` in their own process group (a timeout kills
+  the children too), returning exit code and bounded stdout/stderr tails.
+  Nothing in it is reachable from an HTTP handler with caller-supplied argv.
+- **Machine facts.** `/api/remote/info` gains optional `machine`: platform,
+  arch, distro, uid/root/`sudo -n`, app dir, absolute node and pnpm — what a
+  check compares and what recipes will be handed, since `ssh … bash -s` is a
+  non-login shell. `POST /api/remote/probe` (pairing-gated) returns the same
+  facts; P1 adds `{ requires }` probing under the agent env.
+- **Check.** `helm remote check <id> [--agent <id>] [--json]` →
+  `POST /api/remotes/$id/check` → one table: helm version/build, schema,
+  claude version/auth, runtimes (major must match; a launcher present locally
+  must be present remotely), machine (privileges warn on no-sudo), **user**
+  (the saved login's `id -u` over ssh must equal the daemon's uid — recipes
+  will own what the daemon reads), and per deployed agent the remote's
+  `lastHarness` (now returned by the status route) against the last local
+  fingerprint via `fingerprintDelta` (warn; `harnessDiff` takes over when
+  skills/plugins are declared). Exit 1 when any row failed. Remotes card →
+  **Check** renders the same rows.
+- **Ledger.** `remote_ops` (migration 0014): provision/upgrade/init runs and
+  operator exec notes, `helm remote ops <id>`. `helm remote exec <id> -- cmd…`
+  reads the saved login, spawns ssh from the CLI process with the terminal's
+  keys, then records an `exec-note` — the server never runs the command.
+- **Terminal CLI.** `package.json` gains `bin.helm` and `pnpm helm …`, so the
+  same script the captain has in `tools/helm` runs from a terminal or a local
+  coding agent against `pnpm dev`. Captain prompt gains a "Machine parity"
+  section: check before shipping, relay a refusal's fix, never ssh yourself.
+
+### P1 — declare and refuse (next)
+
+`MachineRequirementsSchema` (bins, apt, pip, npm, browsers; regex-validated
+names) on tools and agents, effective union per agent, bundle format bump
+(tools/agents `requires`, `manifest.requires.machine`, `agentEnv: []`
+pre-declared for P3), ship preflight and import inspect refuse naming the
+missing items and the provision command, the `.helm/machine` prefix on every
+spawn and probe, `helm machine check` locally.
+
+### P2 — provision · P3 — env secrets · P4 — bootstrap from zero
+
+Recipes (`apt`, `pip` into the venv, `npm --prefix .helm`, `playwright` +
+`playwright-deps`, `claude`, `oauth-token` for the "no `--reauth`" gap,
+`helm-upgrade`, `verify`) streamed over the transport, a pure plan from the
+check report, one run per remote at a time, `helm remote provision <id>
+--agent <id> [--dry-run]`, `helm machine apply` locally. Then `agent_env`
+(deny-listed keys, write-only values, travels in the bundle, key+updatedAt in
+the check). Then `helm remote init --ssh user@host --identity k
+--oauth-token-file f` bootstraps a fresh Ubuntu/Debian box and registers it.
