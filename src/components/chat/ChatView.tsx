@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Button } from '#/components/ui/button';
 import { Textarea } from '#/components/ui/textarea';
 import { cn } from '#/lib/utils';
@@ -22,6 +23,14 @@ interface Props {
   heightClassName?: string;
   /** `glass` themes the surface for the warm matte-glass home page. */
   variant?: 'default' | 'glass';
+  /**
+   * `panel`: the chat is a fixed-height column with its own scrolling list
+   * and the composer below it. `page`: the history flows with the document
+   * (the page itself scrolls) and the composer is pinned to the bottom of the
+   * viewport. Note `page` ignores `heightClassName`, and needs the page to
+   * reserve bottom padding for the composer bar.
+   */
+  layout?: 'panel' | 'page';
 }
 
 /** Turns per history page. A page is one ledger query plus one log read per turn. */
@@ -53,14 +62,28 @@ export function ChatView({
   onSessionAppeared,
   heightClassName = 'h-[calc(100vh-12rem)]',
   variant = 'default',
+  layout = 'panel',
 }: Props) {
   const isGlass = variant === 'glass';
+  const isPage = layout === 'page';
   const [liveTurn, setLiveTurn] = useState<LiveTurn | null>(null);
   const [composer, setComposer] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const scrollEndRef = useRef<HTMLDivElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  // Where the page-layout composer bar is portalled to. A `fixed` element is
+  // positioned against its nearest transformed/filtered ancestor, and the
+  // glass card above us uses backdrop-filter, so the bar cannot live inside
+  // it. The nearest `.helm-home` keeps the theme's CSS variables in scope;
+  // body is the fallback on other routes.
+  const [barHost, setBarHost] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    if (layout !== 'page') return;
+    const host = rootRef.current?.closest<HTMLElement>('.helm-home') ?? document.body;
+    setBarHost(host);
+  }, [layout]);
 
   const utils = trpc.useUtils();
   // Pages run newest-first: page 0 is the latest PAGE turns, each further page
@@ -277,11 +300,48 @@ export function ChatView({
   const mutedText = isGlass ? 'text-[var(--warm-ink-soft)]' : 'text-muted-foreground';
   const showEmpty = history.isSuccess && visibleTurns.length === 0;
 
+  const composer_ = (
+    <>
+      {error ? (
+        <p className={cn('mb-2 text-sm', isGlass ? 'text-red-200' : 'text-destructive')}>{error}</p>
+      ) : null}
+      <div className="flex items-end gap-2">
+        <Textarea
+          value={composer}
+          onChange={(e) => setComposer(e.target.value)}
+          onKeyDown={onKey}
+          placeholder={
+            streaming
+              ? 'Streaming response…'
+              : 'Type a message — Enter to send, Shift+Enter for newline.'
+          }
+          rows={2}
+          disabled={streaming}
+          className={cn(
+            'resize-none',
+            isGlass &&
+              'border-white/15 bg-white/5 text-[var(--warm-ink)] placeholder:text-[var(--warm-ink-faint)] focus-visible:border-white/30 focus-visible:ring-white/10',
+          )}
+        />
+        {streaming ? (
+          <Button variant="outline" onClick={cancel} className={cn(isGlass && glassButton)}>
+            Stop
+          </Button>
+        ) : (
+          <Button onClick={send} disabled={!composer.trim()} className={cn(isGlass && glassButton)}>
+            Send
+          </Button>
+        )}
+      </div>
+    </>
+  );
+
   return (
-    <div className={cn('flex flex-col', heightClassName)}>
+    <div ref={rootRef} className={cn('flex flex-col', !isPage && heightClassName)}>
       <div
         className={cn(
-          'flex-1 overflow-y-auto border',
+          'border',
+          !isPage && 'flex-1 overflow-y-auto',
           isGlass ? 'rounded-2xl border-white/10 bg-black/15' : 'bg-background/30 rounded-lg',
         )}
       >
@@ -328,42 +388,34 @@ export function ChatView({
           ) : (
             renderTurns(visibleTurns, variant)
           )}
-          <div ref={scrollEndRef} />
+          {/* In page layout the window scrolls and the composer bar covers the
+              bottom of the viewport, so the end marker keeps a scroll margin
+              that clears it. */}
+          <div ref={scrollEndRef} className={cn(isPage && 'scroll-mb-44')} />
         </div>
       </div>
 
-      {error ? (
-        <p className={cn('mt-2 text-sm', isGlass ? 'text-red-200' : 'text-destructive')}>{error}</p>
-      ) : null}
-
-      <div className="mt-3 flex items-end gap-2">
-        <Textarea
-          value={composer}
-          onChange={(e) => setComposer(e.target.value)}
-          onKeyDown={onKey}
-          placeholder={
-            streaming
-              ? 'Streaming response…'
-              : 'Type a message — Enter to send, Shift+Enter for newline.'
-          }
-          rows={2}
-          disabled={streaming}
-          className={cn(
-            'resize-none',
-            isGlass &&
-              'border-white/15 bg-white/5 text-[var(--warm-ink)] placeholder:text-[var(--warm-ink-faint)] focus-visible:border-white/30 focus-visible:ring-white/10',
-          )}
-        />
-        {streaming ? (
-          <Button variant="outline" onClick={cancel} className={cn(isGlass && glassButton)}>
-            Stop
-          </Button>
-        ) : (
-          <Button onClick={send} disabled={!composer.trim()} className={cn(isGlass && glassButton)}>
-            Send
-          </Button>
-        )}
-      </div>
+      {isPage ? (
+        barHost ? (
+          createPortal(
+            <div className="fixed inset-x-0 bottom-0 z-20 px-6 pb-5">
+              <div
+                className={cn(
+                  'mx-auto w-full max-w-6xl rounded-2xl p-3',
+                  isGlass
+                    ? 'border border-white/15 bg-[rgba(40,22,16,0.72)] shadow-[0_18px_50px_rgba(18,9,5,0.4)] backdrop-blur-xl'
+                    : 'bg-background border shadow-lg',
+                )}
+              >
+                {composer_}
+              </div>
+            </div>,
+            barHost,
+          )
+        ) : null
+      ) : (
+        <div className="mt-3">{composer_}</div>
+      )}
     </div>
   );
 }
