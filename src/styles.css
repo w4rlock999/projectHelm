@@ -482,9 +482,12 @@ a {
 /* helmCaptain: main-card swap transition + boot loader               */
 /* ------------------------------------------------------------------ */
 
-/* The captain interface fades + lifts in when it replaces the fleet. */
+/* The captain interface fades + lifts in when it replaces the fleet.
+   `backwards`, not `both`: a forwards fill would leave an (identity)
+   transform on the panel, and a transformed ancestor becomes the containing
+   block for the chat's `position: fixed` composer bar. */
 .captain-enter {
-  animation: captain-enter 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: captain-enter 520ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
 @keyframes captain-enter {

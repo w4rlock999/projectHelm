@@ -94,7 +94,7 @@ export function CaptainPanel() {
           <ChatView
             agent={captain}
             variant="glass"
-            heightClassName="min-h-0 flex-1"
+            layout="page"
             onSessionAppeared={() => utils.captain.get.invalidate()}
           />
         ) : (
