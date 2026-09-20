@@ -5,11 +5,15 @@
   "imports": {
     "#/*": "./src/*"
   },
+  "bin": {
+    "helm": "src/server/builtin-tools/helm.mjs"
+  },
   "scripts": {
     "dev": "vite dev --port 3000",
     "build": "vite build",
     "preview": "vite preview",
     "serve": "node scripts/serve.mjs",
+    "helm": "node src/server/builtin-tools/helm.mjs",
     "remote:init": "tsx scripts/remote-init.ts",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",

@@ -1,9 +1,13 @@
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import { db } from '../../db/index.ts';
 import { agents, remotes, type Remote } from '../../db/schema.ts';
 import { claudeSkew, helmSkew } from '../../lib/harness-version.ts';
 import { HELM_VERSION } from '../../version.ts';
+import { SSH_TARGET_RE } from '../machine/transport.ts';
 import { localHarnessInfo, type RemoteInfo } from '../remote-info.ts';
 import { fetchRemoteInfo, RemoteError, setRemotePaused, type RemoteErrorKind } from './client.ts';
 import { decodeConnectCode } from './connect-code.ts';
@@ -13,6 +17,12 @@ import { teardownTunnel } from './tunnel.ts';
 // The local remotes registry: CRUD over the `remotes` table plus the
 // handshake-backed operations (add verifies before saving; ping refreshes
 // lastSeenAt/lastVersion/capabilities).
+
+/** A remotes row without its pairing token — the only shape any read surface returns. */
+export function redactRemote(r: Remote): Omit<Remote, 'token'> {
+  const { token: _token, ...rest } = r;
+  return rest;
+}
 
 export function listRemotes(): Remote[] {
   return db.select().from(remotes).all();
@@ -29,6 +39,25 @@ export interface AddRemoteInput {
   sshTarget?: string;
   helmPort?: number;
   token?: string;
+  /** `-i` identity file on this machine; `~` is expanded. Optional in both modes. */
+  sshIdentityFile?: string | null;
+}
+
+/**
+ * Normalize an identity-file path: `~` expanded, must be absolute and exist.
+ * A path, never key material — helm stores where the key is, not the key.
+ * Returns null for an empty/absent value (meaning "ssh's choice").
+ */
+export function normalizeIdentityFile(input: string | null | undefined): string | null {
+  const raw = input?.trim();
+  if (!raw) return null;
+  const expanded =
+    raw === '~' || raw.startsWith('~/') ? path.join(os.homedir(), raw.slice(1)) : raw;
+  if (!path.isAbsolute(expanded)) {
+    throw new Error(`identity file must be an absolute path (or ~/…): ${raw}`);
+  }
+  if (!existsSync(expanded)) throw new Error(`identity file not found: ${expanded}`);
+  return expanded;
 }
 
 /**
@@ -57,19 +86,24 @@ export async function addRemote(
       throw new Error('provide a connect code, or sshTarget + token');
     }
     sshTarget = input.sshTarget.trim();
+    if (!SSH_TARGET_RE.test(sshTarget)) {
+      throw new Error(`sshTarget must look like user@host[:port], got: ${sshTarget}`);
+    }
     helmPort = input.helmPort ?? 5555;
     token = input.token.trim();
     defaultName = sshTarget.split('@').pop()?.split(':')[0] || sshTarget;
   }
 
+  const sshIdentityFile = normalizeIdentityFile(input.sshIdentityFile);
   const id = randomUUID();
-  const info = await fetchRemoteInfo({ id, sshTarget, helmPort, token });
+  const info = await fetchRemoteInfo({ id, sshTarget, helmPort, token, sshIdentityFile });
 
   const now = new Date();
   const row: Remote = {
     id,
     name: input.name?.trim() || defaultName,
     sshTarget,
+    sshIdentityFile,
     helmPort,
     token,
     lastSeenAt: now,
@@ -79,6 +113,44 @@ export async function addRemote(
   };
   db.insert(remotes).values(row).run();
   return { remote: row, info };
+}
+
+export interface UpdateRemoteInput {
+  name?: string;
+  /** null clears (back to ssh's choice); absent leaves it alone. */
+  sshIdentityFile?: string | null;
+}
+
+/**
+ * Edit a registered remote's name or identity file. The cached tunnel is torn
+ * down (it was opened with the old argv) and a fresh handshake proves the new
+ * identity works before the row changes — a bad key never gets saved.
+ */
+export async function updateRemote(
+  id: string,
+  patch: UpdateRemoteInput,
+): Promise<{ remote: Remote; info: RemoteInfo | null } | null> {
+  const existing = getRemote(id);
+  if (!existing) return null;
+  const next: Partial<Remote> = {};
+  if (patch.name !== undefined) {
+    const name = patch.name.trim();
+    if (!name) throw new Error('name cannot be empty');
+    next.name = name;
+  }
+  let info: RemoteInfo | null = null;
+  if (patch.sshIdentityFile !== undefined) {
+    next.sshIdentityFile = normalizeIdentityFile(patch.sshIdentityFile);
+    teardownTunnel(id);
+    info = await fetchRemoteInfo({ ...existing, sshIdentityFile: next.sshIdentityFile });
+    next.lastSeenAt = new Date();
+    next.lastVersion = info.helmVersion;
+    next.capabilities = info.harnesses;
+  }
+  if (Object.keys(next).length > 0) {
+    db.update(remotes).set(next).where(eq(remotes.id, id)).run();
+  }
+  return { remote: getRemote(id)!, info };
 }
 
 export function removeRemote(id: string): boolean {

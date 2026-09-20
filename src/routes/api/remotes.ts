@@ -1,13 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { addRemote, listRemotes } from '../../server/remotes/index.ts';
-import type { Remote } from '../../db/schema.ts';
+import { addRemote, listRemotes, redactRemote as redact } from '../../server/remotes/index.ts';
 
 // Pairing tokens stay out of the agent-facing surface — the captain manages
 // remotes, it doesn't hold their credentials.
-function redact(r: Remote) {
-  const { token: _token, ...rest } = r;
-  return rest;
-}
 
 // /api/remotes — the remotes registry (read/write surface for `helm remote`).
 //   GET  → list
@@ -24,6 +19,7 @@ export const Route = createFileRoute('/api/remotes')({
           sshTarget?: string;
           helmPort?: number;
           token?: string;
+          sshIdentityFile?: string | null;
         };
         try {
           body = (await request.json()) as typeof body;

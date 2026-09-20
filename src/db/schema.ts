@@ -213,6 +213,11 @@ export const remotes = sqliteTable('remotes', {
   // 'user@host[:port]' — handed to the system ssh, so ~/.ssh/config, keys and
   // the agent all apply.
   sshTarget: text('ssh_target').notNull(),
+  // Optional `-i` identity file (an absolute path on THIS machine, never key
+  // material). Null means "let ssh pick" — ~/.ssh/config and the agent apply.
+  // Machine parity P0: saved so a check/provision needs no ambient ssh setup
+  // beyond the key itself.
+  sshIdentityFile: text('ssh_identity_file'),
   // Port the remote daemon listens on (bound to 127.0.0.1 on the remote).
   helmPort: integer('helm_port').notNull().default(5555),
   // Pairing token. Plaintext for v1 (same posture as gateways.token —
@@ -228,6 +233,29 @@ export const remotes = sqliteTable('remotes', {
     .notNull()
     .default(sql`(unixepoch())`),
 });
+
+// What helm did to a machine (machine parity P0). One row per provision /
+// upgrade / init run, or per operator `helm remote exec` (recorded after the
+// fact by the CLI as an 'exec-note'). "What did an agent do to my VPS" must be
+// answerable from the CLI, not only from a log file.
+//
+// `remoteId` is null for the local machine (`helm machine apply`) and is not a
+// FK: unregistering a remote must not erase the record of what was run on it.
+// `detail` never carries env values or tokens — argv and step names only.
+export const remoteOps = sqliteTable('remote_ops', {
+  id: text('id').primaryKey(),
+  remoteId: text('remote_id'),
+  // 'provision' | 'upgrade' | 'init' | 'exec-note'
+  kind: text('kind').notNull(),
+  detail: text('detail', { mode: 'json' }).notNull().$type<unknown>(),
+  // 'operator' | 'agent' | 'system'
+  requestedBy: text('requested_by').notNull(),
+  startedAt: integer('started_at', { mode: 'timestamp' }).notNull(),
+  finishedAt: integer('finished_at', { mode: 'timestamp' }),
+  code: integer('code'),
+  logPath: text('log_path'),
+});
+export type RemoteOp = typeof remoteOps.$inferSelect;
 
 // Remote copies that a completed recall could not delete.
 //

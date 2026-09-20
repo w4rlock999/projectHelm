@@ -49,6 +49,10 @@ export const Route = createFileRoute('/api/remote/agents/$id/status')({
             runBudgetPerHour: a.runBudgetPerHour,
             createdAt: a.createdAt,
           },
+          // What this daemon's CLI loaded on the agent's last turn here — the
+          // observed side of the local console's harness parity row. Names and
+          // statuses only (see fingerprint.ts), so safe to return.
+          lastHarness: a.lastHarness,
           budget: budgetUsage(a.id),
           heartbeats: listHeartbeats(a.id).map((h) => ({
             id: h.id,
