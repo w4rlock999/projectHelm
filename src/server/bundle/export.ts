@@ -5,10 +5,13 @@ import { eq, inArray } from 'drizzle-orm';
 import { db } from '../../db/index.ts';
 import { agents, agentTools, gateways, gatewaysChat, heartbeats, tools } from '../../db/schema.ts';
 import { BUNDLE_FORMAT_VERSION, HELM_VERSION } from '../../version.ts';
+import { getHarnessDefaults } from '../harness/defaults.ts';
+import { resolveHarnessProfile } from '../harness/profile.ts';
 import { paths } from '../paths.ts';
 import { hashFile, stageTree } from './fs.ts';
 import {
   BundleError,
+  isUntravelledWorkspacePath,
   toolContentHash,
   type BundleContents,
   type BundleDb,
@@ -81,6 +84,11 @@ export function collectAgentBundleRows(agentId: string): BundleDb {
     const byId = <T extends { id: string }>(xs: T[]) =>
       [...xs].sort((a, b) => a.id.localeCompare(b.id));
 
+    // Snapshot the *effective* profile so the fleet default the agent ran
+    // under here is pinned on the other side (see BundleAgentSchema.harness).
+    const effective = resolveHarnessProfile(agent.harness, getHarnessDefaults());
+    const harness = Object.values(effective).every((v) => v === null) ? null : effective;
+
     return {
       agent: {
         id: agent.id,
@@ -93,6 +101,7 @@ export function collectAgentBundleRows(agentId: string): BundleDb {
         claudeSessionId: null,
         sessionScope: agent.sessionScope as 'chat' | 'agent',
         sessionRecall: agent.sessionRecall as 'none' | 'all',
+        harness,
         createdAt: secs(agent.createdAt)!,
       },
       tools: byId(toolRows).map((t) => ({
@@ -167,6 +176,9 @@ export function stageBundleTree(
       // excludes only the TOP-LEVEL ones: a nested docs/CLAUDE.md still travels.
       if (rel === 'CLAUDE.md') return false;
       if (rel === 'tools' || rel.startsWith('tools/')) return false;
+      // The CLI's cwd configuration (`.claude/`, `.mcp.json`, `CLAUDE.local.md`)
+      // is rendered by the receiver too, and anything here is agent-authored.
+      if (isUntravelledWorkspacePath(rel)) return false;
       return true;
     },
     warnings,

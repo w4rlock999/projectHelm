@@ -1,4 +1,5 @@
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { harnessFlags } from '../harness/profile.ts';
 import type {
   AdapterContext,
   AgentAdapter,
@@ -7,7 +8,7 @@ import type {
   HelmNoticeEvent,
 } from './types.ts';
 
-const DEFAULT_MODEL = 'sonnet';
+export const DEFAULT_MODEL = 'sonnet';
 
 // Tools pre-granted when an agent doesn't declare its own allow-list.
 // In `-p` mode, Claude Code cannot ask interactively — so anything NOT in
@@ -39,6 +40,10 @@ export const claudeAdapter: AgentAdapter = {
  * `resume` is the **only** source of `--resume` — deliberately not
  * `agent.claudeSessionId`, so the recovery attempt is structurally incapable of
  * resuming the session that just turned out to be missing.
+ *
+ * Model, allow-list and every profile knob live **only** here, never in the
+ * rendered `--settings` file: flags beat settings, and one owner per knob is
+ * what keeps the argv in the run log a complete statement of the spawn.
  */
 export function buildClaudeArgs(agent: AdapterContext['agent'], resume: string | null): string[] {
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages'];
@@ -49,6 +54,9 @@ export function buildClaudeArgs(agent: AdapterContext['agent'], resume: string |
       : DEFAULT_ALLOWED_TOOLS;
   args.push('--allowedTools', allowedTools.join(','));
   args.push('--model', agent.model ?? DEFAULT_MODEL);
+  // Isolation from the host's ~/.claude plus the effective profile. Absent
+  // only in unit tests; agentRuntime always supplies it.
+  if (agent.harness) args.push(...harnessFlags(agent.harness));
   return args;
 }
 
@@ -188,19 +196,61 @@ export function createAttemptSink(ctx: AdapterContext, resume: string | null) {
   };
 }
 
+/** How long a SIGTERM'd process group gets before SIGKILL. */
+export const KILL_GRACE_MS = 5_000;
+
+// Live `claude` process groups, so a daemon that exits with turns in flight
+// takes its children with it. Each spawn is its own process group (see
+// `detached` below), which is what makes the whole tree killable but also
+// means the shell's SIGINT/SIGHUP to the daemon's group no longer reaches them.
+const liveGroups: Set<ChildProcess> =
+  (globalThis as any).__helmClaudeGroups ?? ((globalThis as any).__helmClaudeGroups = new Set());
+if (!(globalThis as any).__helmClaudeExitHook) {
+  (globalThis as any).__helmClaudeExitHook = true;
+  process.once('exit', () => {
+    for (const p of liveGroups) killGroup(p, 'SIGKILL');
+  });
+}
+
+/**
+ * Signal the child's whole process group — the CLI and every stdio MCP server
+ * it spawned. A SIGTERM to the CLI alone leaves those servers running on a
+ * cancelled turn (and, on the VPS, until systemd tears the cgroup down).
+ */
+function killGroup(proc: ChildProcess, signal: NodeJS.Signals): void {
+  if (proc.exitCode !== null || proc.signalCode !== null || !proc.pid) return;
+  try {
+    process.kill(-proc.pid, signal);
+  } catch {
+    // Not a group leader (Windows, or the group already gone): fall back.
+    try {
+      proc.kill(signal);
+    } catch {
+      /* already exited */
+    }
+  }
+}
+
 /** One `claude -p` process, streamed. */
 export const spawnClaudeAttempt: ClaudeAttempt = (ctx, { resume }) => {
   const proc = spawn('claude', buildClaudeArgs(ctx.agent, resume), {
     cwd: ctx.agent.workspaceDir,
     stdio: ['pipe', 'pipe', 'pipe'],
     env: ctx.env ? { ...process.env, ...ctx.env } : process.env,
+    // Own process group, so an abort can kill the CLI *and* the MCP servers
+    // it started. Not unref'd: the daemon still waits on it.
+    detached: process.platform !== 'win32',
   });
+  liveGroups.add(proc);
 
   proc.stdin.write(ctx.prompt);
   proc.stdin.end();
 
+  let killTimer: ReturnType<typeof setTimeout> | undefined;
   const onAbort = () => {
-    if (!proc.killed) proc.kill('SIGTERM');
+    killGroup(proc, 'SIGTERM');
+    killTimer = setTimeout(() => killGroup(proc, 'SIGKILL'), KILL_GRACE_MS);
+    killTimer.unref?.();
   };
   ctx.signal.addEventListener('abort', onAbort, { once: true });
   // A signal that is *already* aborted never fires the listener, so without
@@ -236,13 +286,18 @@ export const spawnClaudeAttempt: ClaudeAttempt = (ctx, { resume }) => {
     stderrTail = appendTail(stderrTail, chunk);
   });
 
+  const settle = () => {
+    ctx.signal.removeEventListener('abort', onAbort);
+    if (killTimer) clearTimeout(killTimer);
+    liveGroups.delete(proc);
+  };
   return new Promise((resolve, reject) => {
     proc.on('error', (err) => {
-      ctx.signal.removeEventListener('abort', onAbort);
+      settle();
       reject(err);
     });
     proc.on('close', (code) => {
-      ctx.signal.removeEventListener('abort', onAbort);
+      settle();
       resolve({ code, sessionInvalid: sink.sessionInvalid, stderrTail });
     });
   });

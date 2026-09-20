@@ -39,6 +39,8 @@ tools/helm remote ls        # registered remote deployment environments
 tools/helm remote ping <id> # handshake a remote, refresh its status
 tools/helm agent runs <id>  # recent turns: source, status, refusals
 tools/helm agent status <id># deploy state + transfer progress
+tools/helm agent harness <id># harness profile + what its CLI actually loaded last turn
+tools/helm harness defaults # fleet-wide harness defaults
 tools/helm system status    # is the fleet paused?
 \`\`\`
 
@@ -58,7 +60,22 @@ tools/helm agent budget <id> --per-hour <n|off>   # cap turns/hour, all sources
 tools/helm system pause [--reason <r>]            # stop admitting new turns
 tools/helm agent ship <id> --remote <remoteId> [--without-data] [--wait]
 tools/helm agent recall <id> [--wait]
+tools/helm agent harness <id> [--effort <l>] [--max-turns <n>] [--permission-mode <m>] [--fallback-model <m>] [--clear]
+tools/helm harness defaults [--effort <l>] [--max-turns <n>] [--permission-mode <m>] [--fallback-model <m>]
 \`\`\`
+
+## The harness (how an agent's Claude Code is spawned)
+
+Every agent runs in an **isolated** Claude Code: only helm's rendered settings,
+skills, plugins and MCP servers load — never this machine's \`~/.claude\`. The
+same isolation applies to you. An agent's **harness profile** sets its effort
+(\`low|medium|high|xhigh|max\`), permission mode (\`default|acceptEdits|dontAsk\`),
+max turns per run, and a fallback model; a field left unset inherits the
+**fleet defaults** (\`helm harness defaults\`). \`helm agent harness <id>\` shows
+the agent's own profile, the effective one, and what its CLI actually loaded on
+its last turn (version, model, skills, plugins, MCP servers). Pass \`off\` to a
+flag to clear that field. Changing a fleet default changes every inheriting
+agent at its next turn — say so before doing it.
 
 ## Deployment (ship & recall)
 
@@ -154,6 +171,8 @@ export function ensureHelmCaptain(): Agent {
     deployError: null,
     runBudgetPerHour: null,
     lastHarness: null,
+    // Inherits the fleet defaults; the captain is isolated like every agent.
+    harness: null,
     createdAt: new Date(),
   };
   db.insert(agents).values(row).run();

@@ -3,9 +3,35 @@ import {
   BundleDbSchema,
   BundleEnvelopeSchema,
   isSafeBundleMemberName,
+  isUntravelledWorkspacePath,
   normalizeMemberName,
   toolContentHash,
 } from './format.ts';
+
+describe('isUntravelledWorkspacePath', () => {
+  it('names the top-level cwd configuration the CLI would load', () => {
+    for (const p of [
+      '.claude',
+      '.claude/settings.json',
+      '.claude/skills/x/SKILL.md',
+      '.mcp.json',
+      'CLAUDE.local.md',
+    ]) {
+      expect(isUntravelledWorkspacePath(p), p).toBe(true);
+    }
+  });
+
+  it('leaves the agent-authored rest alone, nested look-alikes included', () => {
+    for (const p of [
+      'notes.md',
+      'docs/.claude/settings.json',
+      'src/CLAUDE.local.md',
+      'CLAUDE.md',
+    ]) {
+      expect(isUntravelledWorkspacePath(p), p).toBe(false);
+    }
+  });
+});
 
 // isSafeBundleMemberName is the security boundary: it runs over the archive
 // listing before a single inode is created, so everything it lets through will
@@ -126,6 +152,7 @@ const AGENT = {
   claudeSessionId: null,
   sessionScope: 'chat',
   sessionRecall: 'none',
+  harness: null,
   createdAt: 1_700_000_000,
 };
 const EMPTY = {
@@ -140,6 +167,29 @@ const EMPTY = {
 describe('BundleDbSchema', () => {
   it('accepts a minimal bundle', () => {
     expect(BundleDbSchema.safeParse(EMPTY).success).toBe(true);
+  });
+
+  // v2: the agent row is strict. A key this helm does not know might be one a
+  // newer helm uses to change how the agent runs — refuse, never strip.
+  it('rejects an unknown agent key instead of stripping it', () => {
+    const bad = { ...EMPTY, agent: { ...AGENT, hooks: { PreToolUse: [] } } };
+    expect(BundleDbSchema.safeParse(bad).success).toBe(false);
+  });
+
+  it('carries a harness profile and refuses one the daemon cannot run', () => {
+    const ok = {
+      ...EMPTY,
+      agent: {
+        ...AGENT,
+        harness: { effort: 'high', permissionMode: 'dontAsk', maxTurns: 40, fallbackModel: null },
+      },
+    };
+    expect(BundleDbSchema.safeParse(ok).success).toBe(true);
+    const bypass = {
+      ...EMPTY,
+      agent: { ...AGENT, harness: { ...ok.agent.harness, permissionMode: 'bypassPermissions' } },
+    };
+    expect(BundleDbSchema.safeParse(bypass).success).toBe(false);
   });
 
   // Sessions cannot resume on another machine, so a bundle carrying one is

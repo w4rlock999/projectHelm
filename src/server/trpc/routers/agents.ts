@@ -7,16 +7,27 @@ import {
   listAgents,
   loadAgent,
   resetAgentSession,
+  resolvedHarnessProfile,
+  updateAgentHarness,
   updateAgentSessionRecall,
   updateAgentSessionScope,
   updateAgentRunBudget,
   updateAgentSystemPrompt,
 } from '../../agents.ts';
+import { HarnessProfileError, HarnessProfileSchema } from '../../harness/profile.ts';
 import { listHistory } from '../../history.ts';
 import { listRuns } from '../../runs.ts';
 import { publicProcedure, router } from '../init.ts';
 
 const idInput = z.object({ id: z.string().uuid() });
+
+/** A profile the CLI would refuse is the operator's mistake, not a server fault. */
+function badProfile(err: unknown): never {
+  if (err instanceof HarnessProfileError) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: err.message });
+  }
+  throw err;
+}
 
 export const agentsRouter = router({
   list: publicProcedure.query(() => listAgents()),
@@ -36,6 +47,16 @@ export const agentsRouter = router({
       return listRuns(input.id, input.limit);
     }),
 
+  /** The agent's own profile next to what it actually runs with (fleet defaults filled in). */
+  harness: publicProcedure.input(idInput).query(({ input }) => {
+    const agent = loadAgent(input.id);
+    if (!agent) throw new TRPCError({ code: 'NOT_FOUND' });
+    return {
+      own: agent.harness,
+      effective: resolvedHarnessProfile(agent),
+      lastObserved: agent.lastHarness,
+    };
+  }),
   /**
    * The console conversation, replayed from the run logs — what the chat view
    * shows after a refresh. Shared-session turns only. `cursor` is the oldest
@@ -63,9 +84,16 @@ export const agentsRouter = router({
         systemPrompt: z.string().min(1),
         model: z.string().nullish(),
         allowedTools: z.array(z.string()).nullish(),
+        harness: HarnessProfileSchema.nullish(),
       }),
     )
-    .mutation(({ input }) => createAgent(input)),
+    .mutation(({ input }) => {
+      try {
+        return createAgent(input);
+      } catch (err) {
+        return badProfile(err);
+      }
+    }),
 
   update: publicProcedure
     .input(
@@ -77,6 +105,9 @@ export const agentsRouter = router({
         // null clears the cap. `undefined` (absent) leaves it untouched, which
         // is why this is nullish rather than optional.
         runBudgetPerHour: z.number().int().positive().nullish(),
+        // Same convention: null clears the agent's own profile (back to the
+        // fleet defaults), absent leaves it alone.
+        harness: HarnessProfileSchema.nullish(),
       }),
     )
     .mutation(({ input }) => {
@@ -87,6 +118,13 @@ export const agentsRouter = router({
       if (input.sessionRecall) updateAgentSessionRecall(input.id, input.sessionRecall);
       if (input.runBudgetPerHour !== undefined)
         updateAgentRunBudget(input.id, input.runBudgetPerHour);
+      if (input.harness !== undefined) {
+        try {
+          updateAgentHarness(input.id, input.harness);
+        } catch (err) {
+          badProfile(err);
+        }
+      }
       return loadAgent(input.id)!;
     }),
 

@@ -21,6 +21,7 @@ import { Route as ApiToolsIdRouteImport } from './routes/api/tools.$id'
 import { Route as ApiSystemStatusRouteImport } from './routes/api/system.status'
 import { Route as ApiSystemResumeRouteImport } from './routes/api/system.resume'
 import { Route as ApiSystemPauseRouteImport } from './routes/api/system.pause'
+import { Route as ApiSystemHarnessRouteImport } from './routes/api/system.harness'
 import { Route as ApiRemotesIdRouteImport } from './routes/api/remotes.$id'
 import { Route as ApiRemoteResumeRouteImport } from './routes/api/remote.resume'
 import { Route as ApiRemotePauseRouteImport } from './routes/api/remote.pause'
@@ -36,6 +37,7 @@ import { Route as ApiAgentsIdRunsRouteImport } from './routes/api/agents.$id.run
 import { Route as ApiAgentsIdMessagesRouteImport } from './routes/api/agents.$id.messages'
 import { Route as ApiAgentsIdInfoRouteImport } from './routes/api/agents.$id.info'
 import { Route as ApiAgentsIdHeartbeatsRouteImport } from './routes/api/agents.$id.heartbeats'
+import { Route as ApiAgentsIdHarnessRouteImport } from './routes/api/agents.$id.harness'
 import { Route as ApiAgentsIdChatRouteImport } from './routes/api/agents.$id.chat'
 import { Route as ApiRemoteAgentsIdStatusRouteImport } from './routes/api/remote.agents.$id.status'
 import { Route as ApiRemoteAgentsIdExportRouteImport } from './routes/api/remote.agents.$id.export'
@@ -101,6 +103,11 @@ const ApiSystemResumeRoute = ApiSystemResumeRouteImport.update({
 const ApiSystemPauseRoute = ApiSystemPauseRouteImport.update({
   id: '/api/system/pause',
   path: '/api/system/pause',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSystemHarnessRoute = ApiSystemHarnessRouteImport.update({
+  id: '/api/system/harness',
+  path: '/api/system/harness',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiRemotesIdRoute = ApiRemotesIdRouteImport.update({
@@ -178,6 +185,11 @@ const ApiAgentsIdHeartbeatsRoute = ApiAgentsIdHeartbeatsRouteImport.update({
   path: '/api/agents/$id/heartbeats',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAgentsIdHarnessRoute = ApiAgentsIdHarnessRouteImport.update({
+  id: '/api/agents/$id/harness',
+  path: '/api/agents/$id/harness',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAgentsIdChatRoute = ApiAgentsIdChatRouteImport.update({
   id: '/api/agents/$id/chat',
   path: '/api/agents/$id/chat',
@@ -225,12 +237,14 @@ export interface FileRoutesByFullPath {
   '/api/remote/pause': typeof ApiRemotePauseRoute
   '/api/remote/resume': typeof ApiRemoteResumeRoute
   '/api/remotes/$id': typeof ApiRemotesIdRoute
+  '/api/system/harness': typeof ApiSystemHarnessRoute
   '/api/system/pause': typeof ApiSystemPauseRoute
   '/api/system/resume': typeof ApiSystemResumeRoute
   '/api/system/status': typeof ApiSystemStatusRoute
   '/api/tools/$id': typeof ApiToolsIdRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/api/agents/$id/chat': typeof ApiAgentsIdChatRoute
+  '/api/agents/$id/harness': typeof ApiAgentsIdHarnessRoute
   '/api/agents/$id/heartbeats': typeof ApiAgentsIdHeartbeatsRouteWithChildren
   '/api/agents/$id/info': typeof ApiAgentsIdInfoRoute
   '/api/agents/$id/messages': typeof ApiAgentsIdMessagesRoute
@@ -260,12 +274,14 @@ export interface FileRoutesByTo {
   '/api/remote/pause': typeof ApiRemotePauseRoute
   '/api/remote/resume': typeof ApiRemoteResumeRoute
   '/api/remotes/$id': typeof ApiRemotesIdRoute
+  '/api/system/harness': typeof ApiSystemHarnessRoute
   '/api/system/pause': typeof ApiSystemPauseRoute
   '/api/system/resume': typeof ApiSystemResumeRoute
   '/api/system/status': typeof ApiSystemStatusRoute
   '/api/tools/$id': typeof ApiToolsIdRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/api/agents/$id/chat': typeof ApiAgentsIdChatRoute
+  '/api/agents/$id/harness': typeof ApiAgentsIdHarnessRoute
   '/api/agents/$id/heartbeats': typeof ApiAgentsIdHeartbeatsRouteWithChildren
   '/api/agents/$id/info': typeof ApiAgentsIdInfoRoute
   '/api/agents/$id/messages': typeof ApiAgentsIdMessagesRoute
@@ -296,12 +312,14 @@ export interface FileRoutesById {
   '/api/remote/pause': typeof ApiRemotePauseRoute
   '/api/remote/resume': typeof ApiRemoteResumeRoute
   '/api/remotes/$id': typeof ApiRemotesIdRoute
+  '/api/system/harness': typeof ApiSystemHarnessRoute
   '/api/system/pause': typeof ApiSystemPauseRoute
   '/api/system/resume': typeof ApiSystemResumeRoute
   '/api/system/status': typeof ApiSystemStatusRoute
   '/api/tools/$id': typeof ApiToolsIdRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/api/agents/$id/chat': typeof ApiAgentsIdChatRoute
+  '/api/agents/$id/harness': typeof ApiAgentsIdHarnessRoute
   '/api/agents/$id/heartbeats': typeof ApiAgentsIdHeartbeatsRouteWithChildren
   '/api/agents/$id/info': typeof ApiAgentsIdInfoRoute
   '/api/agents/$id/messages': typeof ApiAgentsIdMessagesRoute
@@ -333,12 +351,14 @@ export interface FileRouteTypes {
     | '/api/remote/pause'
     | '/api/remote/resume'
     | '/api/remotes/$id'
+    | '/api/system/harness'
     | '/api/system/pause'
     | '/api/system/resume'
     | '/api/system/status'
     | '/api/tools/$id'
     | '/api/trpc/$'
     | '/api/agents/$id/chat'
+    | '/api/agents/$id/harness'
     | '/api/agents/$id/heartbeats'
     | '/api/agents/$id/info'
     | '/api/agents/$id/messages'
@@ -368,12 +388,14 @@ export interface FileRouteTypes {
     | '/api/remote/pause'
     | '/api/remote/resume'
     | '/api/remotes/$id'
+    | '/api/system/harness'
     | '/api/system/pause'
     | '/api/system/resume'
     | '/api/system/status'
     | '/api/tools/$id'
     | '/api/trpc/$'
     | '/api/agents/$id/chat'
+    | '/api/agents/$id/harness'
     | '/api/agents/$id/heartbeats'
     | '/api/agents/$id/info'
     | '/api/agents/$id/messages'
@@ -403,12 +425,14 @@ export interface FileRouteTypes {
     | '/api/remote/pause'
     | '/api/remote/resume'
     | '/api/remotes/$id'
+    | '/api/system/harness'
     | '/api/system/pause'
     | '/api/system/resume'
     | '/api/system/status'
     | '/api/tools/$id'
     | '/api/trpc/$'
     | '/api/agents/$id/chat'
+    | '/api/agents/$id/harness'
     | '/api/agents/$id/heartbeats'
     | '/api/agents/$id/info'
     | '/api/agents/$id/messages'
@@ -438,11 +462,13 @@ export interface RootRouteChildren {
   ApiRemoteInfoRoute: typeof ApiRemoteInfoRoute
   ApiRemotePauseRoute: typeof ApiRemotePauseRoute
   ApiRemoteResumeRoute: typeof ApiRemoteResumeRoute
+  ApiSystemHarnessRoute: typeof ApiSystemHarnessRoute
   ApiSystemPauseRoute: typeof ApiSystemPauseRoute
   ApiSystemResumeRoute: typeof ApiSystemResumeRoute
   ApiSystemStatusRoute: typeof ApiSystemStatusRoute
   ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
   ApiAgentsIdChatRoute: typeof ApiAgentsIdChatRoute
+  ApiAgentsIdHarnessRoute: typeof ApiAgentsIdHarnessRoute
   ApiAgentsIdHeartbeatsRoute: typeof ApiAgentsIdHeartbeatsRouteWithChildren
   ApiAgentsIdInfoRoute: typeof ApiAgentsIdInfoRoute
   ApiAgentsIdMessagesRoute: typeof ApiAgentsIdMessagesRoute
@@ -540,6 +566,13 @@ declare module '@tanstack/react-router' {
       path: '/api/system/pause'
       fullPath: '/api/system/pause'
       preLoaderRoute: typeof ApiSystemPauseRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/system/harness': {
+      id: '/api/system/harness'
+      path: '/api/system/harness'
+      fullPath: '/api/system/harness'
+      preLoaderRoute: typeof ApiSystemHarnessRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/remotes/$id': {
@@ -645,6 +678,13 @@ declare module '@tanstack/react-router' {
       path: '/api/agents/$id/heartbeats'
       fullPath: '/api/agents/$id/heartbeats'
       preLoaderRoute: typeof ApiAgentsIdHeartbeatsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/agents/$id/harness': {
+      id: '/api/agents/$id/harness'
+      path: '/api/agents/$id/harness'
+      fullPath: '/api/agents/$id/harness'
+      preLoaderRoute: typeof ApiAgentsIdHarnessRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/agents/$id/chat': {
@@ -754,11 +794,13 @@ const rootRouteChildren: RootRouteChildren = {
   ApiRemoteInfoRoute: ApiRemoteInfoRoute,
   ApiRemotePauseRoute: ApiRemotePauseRoute,
   ApiRemoteResumeRoute: ApiRemoteResumeRoute,
+  ApiSystemHarnessRoute: ApiSystemHarnessRoute,
   ApiSystemPauseRoute: ApiSystemPauseRoute,
   ApiSystemResumeRoute: ApiSystemResumeRoute,
   ApiSystemStatusRoute: ApiSystemStatusRoute,
   ApiTrpcSplatRoute: ApiTrpcSplatRoute,
   ApiAgentsIdChatRoute: ApiAgentsIdChatRoute,
+  ApiAgentsIdHarnessRoute: ApiAgentsIdHarnessRoute,
   ApiAgentsIdHeartbeatsRoute: ApiAgentsIdHeartbeatsRouteWithChildren,
   ApiAgentsIdInfoRoute: ApiAgentsIdInfoRoute,
   ApiAgentsIdMessagesRoute: ApiAgentsIdMessagesRoute,

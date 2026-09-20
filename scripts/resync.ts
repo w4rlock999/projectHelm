@@ -3,11 +3,6 @@
  * renderClaudeMd / materializeAgentTools so existing agents pick up the new
  * managed tools block without needing a tool/gateway mutation to trigger a sync.
  */
-import { db } from '../src/db/index.ts';
-import { agents } from '../src/db/schema.ts';
-import { syncAgentTools } from '../src/server/tools.ts';
+import { resyncAllAgents } from '../src/server/tools.ts';
 
-for (const a of db.select().from(agents).all()) {
-  syncAgentTools(a.id);
-  console.log(`resynced ${a.name} (${a.id})`);
-}
+console.log(`resynced ${resyncAllAgents()} agent(s)`);

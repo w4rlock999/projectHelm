@@ -3,7 +3,9 @@
 // HELM_VERSION on releases; bump BUNDLE_FORMAT_VERSION only when the ship/
 // recall bundle layout changes incompatibly.
 export const HELM_VERSION = '0.1.0';
-export const BUNDLE_FORMAT_VERSION = 1;
+// v2 (harness H1): strict agent schema carrying the effective harness profile;
+// the workspace's `.claude/**`, `.mcp.json` and `CLAUDE.local.md` never travel.
+export const BUNDLE_FORMAT_VERSION = 2;
 
 // The git short sha the running build was made from, injected by Vite's
 // `define` (see vite.config.ts). Two daemons at the same HELM_VERSION can still

@@ -1,6 +1,7 @@
 import { sweepRecallOrphans } from '../remotes/orphans.ts';
 import { recoverInterruptedTransfers } from '../remotes/ship.ts';
 import { sweepInterruptedRuns } from '../runs.ts';
+import { resyncAllAgents } from '../tools.ts';
 import { reconcileGateways } from './gateways.ts';
 import { startHeartbeatScheduler } from './heartbeats.ts';
 
@@ -19,6 +20,11 @@ export function ensureRuntimeStarted(): void {
     // never ends never leaves the counted set. Sweep before anything can start.
     const swept = sweepInterruptedRuns();
     if (swept > 0) console.log(`[helm] marked ${swept} interrupted run(s) from a previous process`);
+    // Every agent's tools/, harness files and CLAUDE.md are rewritten from the
+    // database, so a helm upgrade that changes what is rendered reaches agents
+    // created before it — before the scheduler can spawn one of them.
+    const resynced = resyncAllAgents();
+    if (resynced > 0) console.log(`[helm] rendered the harness for ${resynced} agent(s)`);
     startHeartbeatScheduler();
     reconcileGateways();
     // An interrupted ship/recall left its agent deactivated (the safe half);

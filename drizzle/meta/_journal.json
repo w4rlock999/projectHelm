@@ -85,6 +85,13 @@
       "when": 1789792145236,
       "tag": "0011_run_session_key",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1789915128705,
+      "tag": "0012_harness_profile",
+      "breakpoints": true
     }
   ]
 }

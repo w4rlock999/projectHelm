@@ -35,12 +35,14 @@ function readArg(f, key) {
 
 async function call(method, path, body) {
   const headers = {};
-  if (body) headers['content-type'] = 'application/json';
+  // `null` is a real body here (clearing a harness profile), so test for
+  // undefined rather than truthiness.
+  if (body !== undefined) headers['content-type'] = 'application/json';
   if (TOKEN) headers.authorization = 'Bearer ' + TOKEN;
   const res = await fetch(BASE + path, {
     method: method,
     headers: headers,
-    body: body ? JSON.stringify(body) : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
   if (!res.ok) {
@@ -112,8 +114,45 @@ function usage() {
       '  helm agent budget <id> --per-hour <n|off>\n' +
       '  helm agent ship <id> --remote <remoteId> [--without-data] [--wait]\n' +
       '  helm agent recall <id> [--wait]\n' +
-      '  helm system pause [--reason <r>]   # resume needs the operator, not an agent',
+      '  helm system pause [--reason <r>]   # resume needs the operator, not an agent\n' +
+      'harness (how Claude Code is spawned for an agent):\n' +
+      '  helm agent harness <id>            # own profile, effective profile, last observed harness\n' +
+      '  helm agent harness <id> [--effort <low|medium|high|xhigh|max|off>] [--max-turns <n|off>]\n' +
+      '                          [--permission-mode <default|acceptEdits|dontAsk|off>] [--fallback-model <m|off>]\n' +
+      '  helm agent harness <id> --clear    # back to the fleet defaults\n' +
+      '  helm harness defaults              # the fleet defaults every agent inherits\n' +
+      '  helm harness defaults [--effort …] [--max-turns …] [--permission-mode …] [--fallback-model …]',
   );
+}
+
+// Translate `--effort high --max-turns off` into a profile patch: a value sets
+// the field, `off` clears it (null), an absent flag leaves it alone. Shared by
+// the per-agent and fleet-default commands.
+function profilePatch(f) {
+  const patch = {};
+  const fields = {
+    effort: 'effort',
+    'max-turns': 'maxTurns',
+    'permission-mode': 'permissionMode',
+    'fallback-model': 'fallbackModel',
+  };
+  for (const flag in fields) {
+    if (f[flag] === undefined) continue;
+    const key = fields[flag];
+    if (f[flag] === 'off') {
+      patch[key] = null;
+    } else if (key === 'maxTurns') {
+      const n = Number(f[flag]);
+      if (!Number.isInteger(n) || n < 1) {
+        console.error('--max-turns must be a positive integer, or "off"');
+        process.exit(1);
+      }
+      patch[key] = n;
+    } else {
+      patch[key] = f[flag];
+    }
+  }
+  return patch;
 }
 
 (async function () {
@@ -212,8 +251,33 @@ function usage() {
         process.exit(1);
       }
       out(await call('PATCH', '/api/agents/' + argv[2] + '/info', { runBudgetPerHour: value }));
+    } else if (sub === 'harness') {
+      if (!argv[2]) {
+        console.error('usage: helm agent harness <id> [--effort …] [--max-turns …] [--clear]');
+        process.exit(1);
+      }
+      const f = flags(argv.slice(3)).out;
+      if (f.clear === 'true') {
+        out(await call('PATCH', '/api/agents/' + argv[2] + '/harness', null));
+      } else {
+        const patch = profilePatch(f);
+        if (Object.keys(patch).length === 0) {
+          out(await get('/api/agents/' + argv[2] + '/harness'));
+        } else {
+          out(await call('PATCH', '/api/agents/' + argv[2] + '/harness', patch));
+        }
+      }
     } else {
       console.error('unknown: helm agent ' + (sub || ''));
+      process.exit(1);
+    }
+  } else if (cmd === 'harness') {
+    if (sub === 'defaults') {
+      const patch = profilePatch(flags(argv.slice(2)).out);
+      if (Object.keys(patch).length === 0) out(await get('/api/system/harness'));
+      else out(await call('PUT', '/api/system/harness', patch));
+    } else {
+      console.error('unknown: helm harness ' + (sub || ''));
       process.exit(1);
     }
   } else if (cmd === 'tool') {

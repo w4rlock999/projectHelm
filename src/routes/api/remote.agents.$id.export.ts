@@ -39,6 +39,28 @@ export const Route = createFileRoute('/api/remote/agents/$id/export')({
 
         const withData = new URL(request.url).searchParams.get('withoutData') !== '1';
 
+        // Format preflight, BEFORE the claim: if the caller cannot read what
+        // this daemon writes, refuse while the agent is still live here. A
+        // refusal after deactivation would be a recall that strands the agent
+        // for nothing. An absent header is an older caller — let it through
+        // and let its own importer decide.
+        const accepts = request.headers.get('x-helm-accept-bundle-formats');
+        if (accepts !== null) {
+          const accepted = accepts
+            .split(',')
+            .map((s) => Number(s.trim()))
+            .filter((n) => Number.isInteger(n));
+          if (!accepted.includes(BUNDLE_FORMAT_VERSION)) {
+            return Response.json({
+              ok: false,
+              kind: 'format',
+              error:
+                `this daemon writes bundle format v${BUNDLE_FORMAT_VERSION}; ` +
+                `the caller reads [${accepted.join(', ') || '?'}] — upgrade one side`,
+            });
+          }
+        }
+
         // Claim first: durable, so an interrupted recall cannot come back with
         // this agent live here while the local side also brings it up.
         db.update(agents).set({ deployState: 'recalling' }).where(eq(agents.id, params.id)).run();

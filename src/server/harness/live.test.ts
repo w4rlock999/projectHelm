@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -68,6 +68,13 @@ describe.skipIf(!live)('live harness fingerprint', () => {
     expect(turn.harness!.model).toMatch(/^claude-/);
     expect(turn.harness!.tools).toContain('Bash');
     expect(turn.harness!.skills.length).toBeGreaterThan(0);
+    // Isolation (H1): nothing from this machine's ~/.claude leaked in. The
+    // bundled skills remain (they ship with the CLI), but no user-scope MCP
+    // server does, and the only plugin the CLI may load on its own is the
+    // auto-installed agents-md.
+    expect(turn.harness!.mcpServers).toEqual([]);
+    for (const p of turn.harness!.plugins) expect(p.name).toBe('agents-md');
+    expect(turn.harness!.permissionMode).toBe('default');
 
     const run = m.runs.listRuns(agent.id, 1)[0];
     expect(run.status).toBe('ok');
@@ -82,5 +89,10 @@ describe.skipIf(!live)('live harness fingerprint', () => {
     const meta = JSON.parse(log.split('\n')[0]);
     expect(meta.type).toBe('helm_meta');
     expect(meta.argv).toContain('--allowedTools');
+    expect(meta.argv).toContain('--strict-mcp-config');
+    expect(meta.argv[meta.argv.indexOf('--setting-sources') + 1]).toBe('project');
+    // The rendered files the argv points at exist.
+    expect(existsSync(meta.argv[meta.argv.indexOf('--settings') + 1])).toBe(true);
+    expect(existsSync(meta.argv[meta.argv.indexOf('--mcp-config') + 1])).toBe(true);
   }, 180_000);
 });

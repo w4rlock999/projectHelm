@@ -2,7 +2,11 @@ import { createWriteStream, mkdirSync } from 'node:fs';
 import { buildClaudeArgs, resultText, runClaude } from './adapter/claude.ts';
 import { agentRuntime, loadAgent, updateAgentLastHarness, updateAgentSessionId } from './agents.ts';
 import { config } from './config.ts';
-import { fingerprintFromInit, type HarnessFingerprint } from './harness/fingerprint.ts';
+import {
+  fingerprintDelta,
+  fingerprintFromInit,
+  type HarnessFingerprint,
+} from './harness/fingerprint.ts';
 import { paths, SHARED_SESSION_KEY } from './paths.ts';
 import { getInternalToken } from './remote-auth.ts';
 import {
@@ -12,6 +16,7 @@ import {
   markRunStarted,
   reserveRun,
 } from './runs.ts';
+import { renderAgentHarness } from './tools.ts';
 import type { ClaudeEvent } from './adapter/types.ts';
 import type { Agent } from '../db/schema.ts';
 
@@ -162,6 +167,12 @@ export function runAgentTurn(
     const session = opts.session ?? agentStore(agent);
     const runtime = agentRuntime(agent);
 
+    // Render-before-spawn. Inside the chain no `claude` is running for this
+    // agent, so wiping the workspace's `.claude/` (the project setting source
+    // the agent could have written to) cannot race a CLI reading it. Cheap:
+    // three small files.
+    renderAgentHarness(agentId);
+
     mkdirSync(paths.agentLogsDir(agent.id), { recursive: true });
     const logStream = createWriteStream(paths.agentLogFile(agent.id, runId), { flags: 'a' });
     // The argv is logged so a run can be reproduced by hand and so a harness
@@ -230,6 +241,14 @@ export function runAgentTurn(
             // it on the agent here — inside the chain, after the run gate — so
             // "last harness" can never be written by a turn a ship raced.
             harness = fingerprintFromInit(evt as Record<string, unknown>);
+            // Anything the agent could notice changing between its last turn
+            // and this one goes to the daemon log, so a hidden dependency on a
+            // host skill or plugin surfaces there rather than as a quietly
+            // worse agent.
+            const delta = agent.lastHarness ? fingerprintDelta(agent.lastHarness, harness) : [];
+            if (delta.length > 0) {
+              console.log(`[helm] agent ${agent.name}: harness changed — ${delta.join(', ')}`);
+            }
             updateAgentLastHarness(agentId, harness);
           }
           if (evt.type === 'result') {

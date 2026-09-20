@@ -38,6 +38,19 @@ export const paths = {
   agentWorkspaceDir: (id: string) => path.join(helmRoot, 'agents', id, 'workspace'),
   agentToolsDir: (id: string) => path.join(helmRoot, 'agents', id, 'workspace', 'tools'),
   agentClaudeMd: (id: string) => path.join(helmRoot, 'agents', id, 'workspace', 'CLAUDE.md'),
+  // ── Harness (harness ownership H1) ───────────────────────────────────────
+  // Helm-owned, outside the agent's cwd: what `--settings`, `--mcp-config` and
+  // `--plugin-dir` point at. Rendered by harness/render.ts before every spawn.
+  agentHarnessDir: (id: string) => path.join(helmRoot, 'agents', id, 'harness'),
+  agentHarnessSettings: (id: string) =>
+    path.join(helmRoot, 'agents', id, 'harness', 'settings.json'),
+  agentHarnessMcp: (id: string) => path.join(helmRoot, 'agents', id, 'harness', 'mcp.json'),
+  agentHarnessPluginsDir: (id: string) => path.join(helmRoot, 'agents', id, 'harness', 'plugins'),
+  // The *project* setting source inside the agent-writable workspace — wiped
+  // and rebuilt on every render, never trusted from a bundle.
+  agentDotClaudeDir: (id: string) => path.join(helmRoot, 'agents', id, 'workspace', '.claude'),
+  agentSkillsDir: (id: string) =>
+    path.join(helmRoot, 'agents', id, 'workspace', '.claude', 'skills'),
   agentLogsDir: (id: string) => path.join(helmRoot, 'agents', id, 'logs'),
   agentLogFile: (id: string, runId: string) =>
     path.join(helmRoot, 'agents', id, 'logs', `${runId}.ndjson`),

@@ -345,7 +345,7 @@ Explicitly out of v1, in rough priority order:
 
 ## Harness ownership (H0 → H2)
 
-_Drafted 2026-09-19. Status: **H0 implemented**; H1 and H2 are the next build targets._
+_Drafted 2026-09-19. Status: **H0 and H1 implemented**; H2 is the next build target._
 
 Helm never owned the Claude Code harness. The adapter spawned `claude -p` with
 `--allowedTools` and `--model` and inherited everything else from the host's
@@ -391,16 +391,52 @@ restart` cannot leave the daemon 500-ing its own handshake on a missing column.
 - `remote:init` writes `DISABLE_AUTOUPDATER=1`, records the CLI version, and
   gains `--claude-version <v>` (fresh init) and `--claude <v>` (move the pin).
 
-### H1 — own and isolate (next)
+### H1 — own and isolate (shipped)
 
-Per-agent `agents.harness` profile (effort, permission mode, max turns,
-fallback model) plus fleet defaults in `settings`; rendered to
-`.helm/agents/<id>/harness/{settings.json,mcp.json}` and `workspace/.claude/`
-right before each spawn, inside the per-agent run chain; adapter argv gains the
-isolation flags. The exporter excludes `workspace/.claude/**`, `.mcp.json` and
-`CLAUDE.local.md`, and the importer strips them — an agent-authored
-`.claude/settings.json` must never travel or load. Bundle format bumps to 2 with
-a strict agent schema and the _effective_ profile snapshotted at export.
+- **Profile.** `agents.harness` (migration 0011) holds the agent's own effort
+  (`low|medium|high|xhigh|max`), permission mode (`default|acceptEdits|dontAsk`
+  — `plan` makes heartbeats no-ops and `bypassPermissions` is refused as root),
+  max turns and fallback model; every field nullable. Fleet defaults live in
+  `settings['harness.defaults']`; `resolveHarnessProfile` is field-wise
+  `agent ?? default ?? null`, and a null field emits no flag. A fallback model
+  equal to the agent's model is refused at the write surface (the CLI would die
+  parsing argv, which is the no-result path H0 made an error).
+- **Isolation.** Every spawn — helmCaptain included — gets
+  `--setting-sources project --settings <agentDir>/harness/settings.json
+--strict-mcp-config --mcp-config <agentDir>/harness/mcp.json` plus the
+  profile flags. The workspace's `.claude/` (the project setting source, which
+  the agent can write to) is wiped and rebuilt on every render; `.mcp.json` and
+  `CLAUDE.local.md` are removed too. Model, allow-list and the profile are
+  argv-only — `settings.json` carries just `env.MCP_TIMEOUT`. The spawn is its
+  own process group so an abort kills the CLI's MCP children with it.
+- **Render-before-spawn.** `renderAgentHarness` runs at the head of every turn
+  inside the per-agent chain (no CLI is running for that agent there), at
+  boot for every agent (`resyncAllAgents`), and from `syncAgentTools` on every
+  mutation. The harness/render module is pure filesystem so the importer can
+  render into quarantine before a row exists.
+- **Bundle format 2.** `BundleAgentSchema` is strict and carries the
+  _effective_ profile (agent ⊕ source fleet defaults), stored as the imported
+  agent's own so the target's defaults do not apply to it. The exporter
+  excludes top-level `workspace/.claude/**`, `.mcp.json`, `CLAUDE.local.md`;
+  the importer strips them from any bundle with a warning. No dual read:
+  upgrade both sides (ship preflight already says so).
+- **Recall preflight.** `/api/remote/info` gains optional `bundleWrites`;
+  `runRecall` refuses before claiming when the remote writes a format this helm
+  cannot read, and `downloadBundle` sends `x-helm-accept-bundle-formats`, which
+  the export route checks _before_ deactivating its agent. A remote-side agent
+  left `recalling` by an interrupted recall is logged at boot but deliberately
+  **not** reactivated: the caller may hold a live copy, and two pollers on one
+  bot token is the failure the whole ship design exists to prevent.
+- **Surfaces.** Agent page → Harness tab (profile form + last observed
+  fingerprint); home header → fleet defaults dialog; `helm agent harness <id>
+[--effort …|off] [--clear]`, `helm harness defaults […]`; REST
+  `/api/agents/$id/harness` (GET/PATCH), `/api/system/harness` (GET/PUT);
+  `agents.$id.info` exposes `harness`, `harnessEffective`, `lastHarness`.
+- **What the fingerprint now shows.** Under isolation a turn reports the CLI's
+  bundled skills only (~17 on 2.1.27x) and the auto-installed `agents-md`
+  plugin, `mcpServers: []`, and the profile's permission mode. When an agent's
+  fingerprint changes between turns the delta is logged (`skills 26 → 17`), so
+  a hidden dependency on a host skill surfaces in the daemon log.
 
 ### H2 — library and travel (after H1)
 
